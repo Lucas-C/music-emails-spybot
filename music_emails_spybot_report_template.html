@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang='fr'>
+  <head>
+    <meta charset='UTF-8'>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ project_name }}</title>
+    <meta name="author" content="Lucas Cimon [ chezsoi.org/lucas ]"/>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1>{{ project_name }}</h1>
+      <div class="col-md-1"></div>
+      <div class="col-md-10">
+        <img src="{{ project_name }}.jpg" class="center-block">
+        <p class="text-center">
+          <a href="mailto:{{ allmembers_email_dest }}?subject={{ email_subject }}">Envoyer un email à tous les participants</a>
+          <br>
+          <em>(est considéré participant toute personne ayant déjà contribué)</em>
+        </p>
+        <h3>Morceaux</h3>
+          <div class="table-responsive">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th class="col-md-2">Date</th>
+                  <th class="col-md-8">Description</th>
+                  <th class="col-md-2">Auteur</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for id, email in emails.items()|sort(attribute='1.timestamp', reverse=True) %}
+                {% for link in email.links %}
+                <tr><!-- email ID: {{ id }} -->
+                  <td>{{ email.date_str }}</td>
+                  <td>
+                    {% if link.youtube_song_name %}
+                    Youtube : <em><a href="{{ link.url }}">{{ link.youtube_song_name }}</a></em><br>
+                    {% endif %}
+                    "{{ link.quote }}"
+                  </td>
+                  {% for user_email, user_name in email.src.items() %}
+                  <td>{{ user_name }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        <h3>Stats</h3>
+        {% for user_email, user in users.items()|sort(attribute='1.name') %}
+        <li>{{ user.name }} (envoyés: {{ user.emails_sent }} - reçus: {{ user.emails_received }})</li>
+        {% endfor %}
+      </div>
+      <div class="col-md-1"></div>
+    </div>
+    <footer style="height: 10rem"></footer>
+  </body>
+</html>
