@@ -2,6 +2,7 @@
 
 # INSTALL: pip install --user Jinja2 requests
 # USAGE: ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD --ignored-links-pattern 'novaplanet\.com|urbandictionary\.com|xkcd\.com|\.gif$|\.jpe?g$'
+#  jq 'del(.rawdata)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 #  jq -r '.rawdata["17302"]["text/plain"]' < ComfySpy_bot_memory.json
 
 import argparse, email, html, json, re, requests, os, sys
@@ -28,6 +29,7 @@ def main(argv=sys.argv[1:]):
     archive['emails'] = extract_emails(archive['rawdata'], args.ignored_links_pattern)
     get_youtube_song_names(archive)
     archive['users'] = compute_users_stats(archive['emails'])
+    fix_usernames(archive['users'], args.project_name)
     save_archive_to_file(args.project_name, archive)
     allmembers_email_dest = ';'.join(user_email for user_email, user in archive['users'].items() if user['emails_sent'])
     generates_html_report(archive, args.project_name, args.email_subject, allmembers_email_dest)
@@ -53,9 +55,14 @@ def load_archive_from_file(project_name):
     db_file_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '_bot_memory.json')
     try:
         with open(db_file_path, 'r') as archive_file:
-            return json.load(archive_file)
-    except FileNotFoundError:
-        return {'rawdata': {}, 'emails': {}, 'users': {}}
+            archive = json.load(archive_file)
+    except (FileNotFoundError, ValueError):
+        archive = {}
+    archive['rawdata'] = archive.get('rawdata', {})
+    archive['emails'] = archive.get('emails', {})
+    archive['users'] = archive.get('users', {})
+    archive['youtube_song_names_cache'] = archive.get('youtube_song_names_cache', {})
+    return archive
 
 def save_archive_to_file(project_name, archive):
     print('Now saving archive to disk file')
@@ -126,8 +133,8 @@ def format_date(date):
 def extract_src_dst(rawdatum):
     src_user_email, src_user_name = extract_user_email_and_name(rawdatum['From'])
     dests = HEADER_EMAIL_SPLITTER_RE.split(rawdatum['To']) + (HEADER_EMAIL_SPLITTER_RE.split(rawdatum['Cc']) if rawdatum['Cc'] else [])
-    return {'src': {src_user_email: src_user_name},
-            'dests': {email: name for email, name in (extract_user_email_and_name(dest) for dest in dests)}}
+    return {'src': {src_user_email: {'name': src_user_name}},  # only one item in there
+            'dests': {email: {'name': name} for email, name in (extract_user_email_and_name(dest) for dest in dests)}}
 
 def extract_user_email_and_name(address):
     match = HEADER_EMAIL_USER_ADDRESS_RE.match(address.strip())
@@ -165,8 +172,6 @@ def extract_links(email_msg, ignored_links_pattern):
 
 def get_youtube_song_names(archive):
     print('Now getting names of Youtube songs')
-    if 'youtube_song_names_cache' not in archive:
-        archive['youtube_song_names_cache'] = {}
     youtube_song_names_cache = archive['youtube_song_names_cache']
     for _, email_msg in archive['emails'].items():
         for link in email_msg['links']:
@@ -182,20 +187,40 @@ def get_page_title(url):
 
 def compute_users_stats(emails):
     users = {}
-    def add_user(user_email, user_name):
+    def merge_user(user_email, user):
         if user_email not in users:
-            users[user_email] = {'name': user_name, 'emails_received': 0, 'emails_sent': 0}
+            user['emails_received'] = 0
+            user['emails_sent'] = 0
+            users[user_email] = user
+            return user
+        if user_email not in users:
+            users[user_email]['emails_received'] += user['emails_received']
+            users[user_email]['emails_sent'] += user['emails_sent']
         if '@' in users[user_email]['name']:
-            users[user_email]['name'] = user_name
+            users[user_email]['name'] = user['name']
+        return users[user_email]
     for _, email_msg in emails.items():
-        user_email, user_name = list(email_msg['src'].items())[0]
-        add_user(user_email, user_name)
-        users[user_email]['emails_sent'] += 1
-        for user_email, user_name in email_msg['dests'].items():
-            add_user(user_email, user_name)
-            users[user_email]['emails_received'] += 1
+        for user_email, user in email_msg['src'].items():  # only one item in there
+            user = merge_user(user_email, user)
+            user['emails_sent'] += 1
+            email_msg['src'][user_email] = user
+        for user_email, user in email_msg['dests'].items():
+            user = merge_user(user_email, user)
+            user['emails_received'] += 1
+            email_msg['dests'][user_email] = user
     assert len(emails) == sum(user['emails_sent'] for user_email, user in users.items())
     return users
+
+def fix_usernames(users, project_name):
+    usernames_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '_imap_usernames.json')
+    if not os.path.exists(usernames_filepath):
+        return
+    print('Now fixing the users names')
+    with open(usernames_filepath, 'r') as usernames_file:
+        correct_usernames = json.load(usernames_file)
+    for user_email, user in users.items():
+        if user_email in correct_usernames:
+            user['name'] = correct_usernames[user_email]
 
 def generates_html_report(archive, project_name, email_subject, allmembers_email_dest):
     print('Now generating the HTML report')

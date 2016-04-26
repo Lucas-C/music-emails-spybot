@@ -40,8 +40,8 @@
                     {% endif %}
                     "{{ link.quote }}"
                   </td>
-                  {% for user_email, user_name in email.src.items() %}
-                  <td>{{ user_name }}</td>
+                  {% for user_email, user in email.src.items() %}
+                  <td>{{ user.name }}</td>
                   {% endfor %}
                 </tr>
                 {% endfor %}
@@ -56,6 +56,8 @@
       </div>
       <div class="col-md-1"></div>
     </div>
-    <footer style="height: 10rem"></footer>
+    <footer style="padding: 5rem" class="text-center">
+      Source code available on Github at <a href="https://github.com/Lucas-C/music-email-spybot">Lucas-C/music-email-spybot</a>
+    </footer>
   </body>
 </html>

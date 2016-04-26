@@ -3,6 +3,11 @@
 ![](https://chezsoi.org/lucas/ComfySpy.jpg)
 
 
+## Demo
+
+[ComfySpy](https://chezsoi.org/lucas/ComfySpy.html)
+
+
 ## Installation
 
     pip3 install --user Jinja1 requests
