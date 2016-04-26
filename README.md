@@ -19,6 +19,13 @@
     ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD --ignored-links-pattern 'novaplanet\.com|urbandictionary\.com|xkcd\.com|\.gif$|\.jpe?g$'
 
 
+## Installation en tâche cronnée
+
+    cat <<EOF > /etc/cron.d/music_emails_spybot_crontask
+    00 00 * * * root "$PWD/music_emails_spybot.py" ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD --ignored-links-pattern 'novaplanet\.com|urbandictionary\.com|xkcd\.com|\.gif$|\.jpe?g$' >> "$PWD/ComfySpy.log" 2>&1
+    EOF
+
+
 ## Contributing
 
 [![Requirements Status](https://requires.io/github/Lucas-C/music-emails-spybot/requirements.svg?branch=master)](https://requires.io/github/Lucas-C/music-emails-spybot/requirements/?branch=master)

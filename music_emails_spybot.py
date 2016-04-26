@@ -157,15 +157,18 @@ def extract_links(email_msg, ignored_links_pattern):
             continue
         text = re.sub(r'\s+', ' ', text.strip())
         plain_text_content = re.sub('<(?!' + re.escape(url) + ')[^>]+>', '', email_msg['text/plain'])
+        plain_text_content = re.sub('(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
         if text == url:
             regex = re.escape(url)
         else:
             regex = re.sub(r'\\\s+', r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
-        match = re.search('[^.!?]*' + regex + '[^.!?]*[.!?]*', plain_text_content, re.DOTALL)
+        match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
         if not match:
             regex = re.sub(r'\\\s+', r'\s+', re.escape(text))
-            match = re.search('[^.!?]*' + regex + '[^.!?]*[.!?]*', plain_text_content, re.DOTALL)
+            match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
         quote = match.group().strip()
+        if quote[0] in '.!?':
+            quote = quote[1:]
         quote = re.sub(r'\s+', ' ', quote)
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
         yield {'url': url, 'quote': quote, 'text': text}
