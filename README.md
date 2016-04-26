@@ -21,7 +21,7 @@
 
 ## Contributing
 
-[![Requirements Status](https://requires.io/github/Lucas-C/music-email-spybot/requirements.svg?branch=master)](https://requires.io/github/Lucas-C/music-email-spybot/requirements/?branch=master)
+[![Requirements Status](https://requires.io/github/Lucas-C/music-emails-spybot/requirements.svg?branch=master)](https://requires.io/github/Lucas-C/music-emails-spybot/requirements/?branch=master)
 
 Bug reports or features suggestions are warmly welcome !
 
