@@ -13,7 +13,7 @@
       <h1>{{ project_name }}</h1>
       <div class="col-md-1"></div>
       <div class="col-md-10">
-        <img src="{{ project_name }}.jpg" class="center-block">
+        <a href="#"><img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" class="center-block"></a>
         <p class="text-center">
           <a href="mailto:{{ allmembers_email_dest }}?subject={{ email_subject }}">Envoyer un email à tous les participants</a>
           <br>
@@ -30,28 +30,12 @@
                 </tr>
               </thead>
               <tbody>
-                {% for id, email in emails.items()|sort(attribute='1.timestamp', reverse=True) %}
-                {% for link in email.links %}
-                <tr><!-- email ID: {{ id }} -->
-                  <td>{{ email.date_str }}</td>
-                  <td>
-                    {% if link.youtube_song_name %}
-                    Youtube : <em><a href="{{ link.url }}">{{ link.youtube_song_name }}</a></em><br>
-                    {% endif %}
-                    "{{ link.quote }}"
-                  </td>
-                  {% for user_email, user in email.src.items() %}
-                  <td>{{ user.name }}</td>
-                  {% endfor %}
-                </tr>
-                {% endfor %}
-                {% endfor %}
               </tbody>
             </table>
           </div>
         <h3>Stats</h3>
-        {% for user_email, user in users.items()|sort(attribute='1.name') %}
-        <li>{{ user.name }} (envoyés: {{ user.emails_sent }} - reçus: {{ user.emails_received }})</li>
+        {% for user_name, user_stats in stats.users.items()|sort(attribute='1.links_shared', reverse=True) %}
+        <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
         {% endfor %}
       </div>
       <div class="col-md-1"></div>
@@ -59,5 +43,68 @@
     <footer style="padding: 5rem" class="text-center">
       Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
     </footer>
+    <script>
+    (function () {
+        var links = [
+          {% for link in links|sort(attribute='email.timestamp', reverse=True) %}
+            {timestamp: {{ link.email.timestamp }}, tags: {{ link.tags|list }}, element: trFromString('\
+            <tr><!-- email.id: {{ link.email.id }} - email.timestamp: {{ link.email.timestamp }} -->\
+              <td>{{ link.email.date_str }}</td>\
+              <td>\
+                {% if link.page_title %}\
+                <div class="text-center">\
+                  <em>Page title : <a href="{{ link.url }}">{{ link.page_title|replace("'", "&#39;") }}</a></em><br>\
+                </div>\
+                {% endif %}\
+                "{{ link.quote|replace("'", "&#39;") }}"\
+              </td>\
+              {% for user_email, user in link.email.src.items() %}\
+              <td>{{ user.name }}</td>\
+              {% endfor %}\
+            </tr>\
+            ')},
+          {% endfor %}
+        ];
+
+        var links_per_tag = {};
+        links.forEach(function (link) {
+            link.tags.forEach(function (tag) {
+                if (!links_per_tag[tag]) {
+                    links_per_tag[tag] = [];
+                }
+                links_per_tag[tag].push(link);
+                links_per_tag[tag].sort(function (l1, l2) { return l2.timestamp - l1.timestamp; });
+            });
+        });
+
+        window.onhashchange = updateTable;
+        updateTable();
+
+        function updateTable() {
+            var tag = location.hash.slice(1);
+            var tbody = document.getElementsByTagName('tbody')[0];
+            removeAllChildren(tbody);
+            var linksTodisplay = links;
+            if (tag) {
+                linksTodisplay = links_per_tag[tag];
+            }
+            linksTodisplay.forEach(function (link) {
+                tbody.appendChild(link.element);
+            });
+        }
+
+        function removeAllChildren (element) {
+            while (element.firstChild) {
+                element.removeChild(element.firstChild);
+            }
+        }
+
+        function trFromString (string) {
+            var div = document.createElement('tbody');
+            div.innerHTML = string;
+            return div.children[0];
+        }
+    })();
+    </script>
   </body>
 </html>

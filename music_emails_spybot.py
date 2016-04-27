@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# INSTALL: pip install --user Jinja2 requests
-# USAGE: ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD --ignored-links-pattern 'novaplanet\.com|urbandictionary\.com|xkcd\.com|\.gif$|\.jpe?g$'
 #  jq 'del(.rawdata)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 #  jq -r '.rawdata["17302"]["text/plain"]' < ComfySpy_bot_memory.json
 
@@ -18,6 +16,7 @@ HEADER_EMAIL_SPLITTER_RE = re.compile(', ?\r?\n?\t?')
 HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?(cc:\s*)?([^"]+)"?\s+<(.+)>', re.DOTALL)
 HEADER_EMAIL_ADDRESS_RE = re.compile(r'[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}')
 CONTENT_LINK_TAGS_RE = re.compile(r'<a\s+href="?(http[^> "]*)"?\s*>([^<]*)</a>', re.DOTALL)
+CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
 
 def main(argv=sys.argv[1:]):
     args = parse_args(argv)
@@ -26,13 +25,17 @@ def main(argv=sys.argv[1:]):
                              args.imap_server_name, args.imap_server_port, args.imap_mailbox)
     archive['rawdata'].update(extract_rawdata(msgs))
     save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
-    archive['emails'] = extract_emails(archive['rawdata'], args.ignored_links_pattern)
-    get_youtube_song_names(archive)
-    archive['users'] = compute_users_stats(archive['emails'])
-    fix_usernames(archive['users'], args.project_name)
+    emails = extract_emails(archive['rawdata'], args.ignored_links_pattern)
+    add_page_titles(archive['page_titles_cache'], emails)
     save_archive_to_file(args.project_name, archive)
-    allmembers_email_dest = ';'.join(user_email for user_email, user in archive['users'].items() if user['emails_sent'])
-    generates_html_report(archive, args.project_name, args.email_subject, allmembers_email_dest)
+    users = aggregate_users(emails)
+    fix_usernames(users, args.project_name)
+    archive['stats'] = compute_stats(emails)
+    archive['allmembers_email_dest'] = ';'.join(user_email for user_email, user in users.items()
+                                                           if archive['stats']['users'][user['name']]['emails_sent'])
+    archive['links'] = [link for email_msg in emails.values()
+                             for link in email_msg['links']]
+    generates_html_report(archive, args.project_name, args.email_subject)
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Generates an HTML report of all mentioned songs in emails retrieved from IMAP server (e.g. Gmail)',
@@ -40,10 +43,10 @@ def parse_args(argv):
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=True)
-    parser.add_argument('--ignored-links-pattern', default=r'\.gif$|\.jpe?g$')
-    parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"')
-    parser.add_argument('--imap-server-name', default='imap.gmail.com')
-    parser.add_argument('--imap-server-port', type=int, default=993)
+    parser.add_argument('--ignored-links-pattern', default=r'\.gif$|\.jpe?g$', help=' ')
+    parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
+    parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
+    parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
     parser.add_argument('project_name')
     return parser.parse_args(argv)
 
@@ -59,9 +62,7 @@ def load_archive_from_file(project_name):
     except (FileNotFoundError, ValueError):
         archive = {}
     archive['rawdata'] = archive.get('rawdata', {})
-    archive['emails'] = archive.get('emails', {})
-    archive['users'] = archive.get('users', {})
-    archive['youtube_song_names_cache'] = archive.get('youtube_song_names_cache', {})
+    archive['page_titles_cache'] = archive.get('page_titles_cache', {})
     return archive
 
 def save_archive_to_file(project_name, archive):
@@ -93,8 +94,8 @@ def extract_rawdata(msgs):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
     email_msgs = {id: email.message_from_string(decode_ffs(msg[1][0][1])) for id, msg in msgs.items()}
     rawdata = {id: {'Date': msg.get('Date'), 'From': msg.get('From'), 'To': msg.get('To'), 'Cc': msg.get('Cc')} for id, msg in email_msgs.items()}
-    rawdata = nested_merge(rawdata, {id: {'text/html': get_msg_content(msg.get_payload(), 'text/html')} for id, msg in email_msgs.items()})
-    rawdata = nested_merge(rawdata, {id: {'text/plain': get_msg_content(msg.get_payload(), 'text/plain')} for id, msg in email_msgs.items()})
+    nested_merge(rawdata, {id: {'text/html': get_msg_content(msg.get_payload(), 'text/html')} for id, msg in email_msgs.items()})
+    nested_merge(rawdata, {id: {'text/plain': get_msg_content(msg.get_payload(), 'text/plain')} for id, msg in email_msgs.items()})
     return rawdata
 
 def get_msg_content(msgs, target_content_type):
@@ -104,7 +105,7 @@ def get_msg_content(msgs, target_content_type):
         return get_msg_content([msg.get_payload() for msg in msgs if msg.get_content_type() == 'multipart/alternative'][0], target_content_type)
     if any(msg.get_content_type() == target_content_type for msg in msgs):
         return html.unescape(decode_ffs([msg.get_payload(decode=True) for msg in msgs if msg.get_content_type() == target_content_type][0]))
-    assert False
+    raise NotImplementedError('Unsupported Content-Types: {}'.format([msg.get_content_type() for msg in msgs]))
 
 def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
     try:
@@ -112,18 +113,16 @@ def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
     except UnicodeError:
         return bytestring.decode('latin1')
 
-def nested_merge(*dicts):
-    result = defaultdict(dict)
-    for d in dicts:
-        for k, v in d.items():
-            result[k].update(v)
-    return result
+def nested_merge(dst, src):
+    for k, v in src.items():
+        dst[k].update(v)
 
 def extract_emails(rawdata, ignored_links_pattern):
     print('Now extracting meaningful info from raw data')
-    emails = {id: format_date(datum['Date']) for id, datum in rawdata.items()}
-    emails = nested_merge(emails, {id: extract_src_dst(datum) for id, datum in rawdata.items()})
-    emails = nested_merge(emails, {id: {'links': list(extract_links(datum, ignored_links_pattern))} for id, datum in rawdata.items()})
+    emails = {id: {'id': id} for id in rawdata.keys()}
+    nested_merge(emails, {id: format_date(datum['Date']) for id, datum in rawdata.items()})
+    nested_merge(emails, {id: extract_src_dst(datum) for id, datum in rawdata.items()})
+    nested_merge(emails, {id: {'links': list(extract_links(datum, ignored_links_pattern, emails[id]))} for id, datum in rawdata.items()})
     return emails
 
 def format_date(date):
@@ -149,69 +148,73 @@ def extract_user_email_and_name(address):
         user_name = ''
     return user_email.lower(), user_name
 
-def extract_links(email_msg, ignored_links_pattern):
-    for match in re.findall(CONTENT_LINK_TAGS_RE, email_msg['text/html']):
+def extract_links(rawdatum, ignored_links_pattern, email_msg):
+    for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
         if re.search(ignored_links_pattern, url):
             print('- Ignoring link {} ({})'.format(text, url))
             continue
         text = re.sub(r'\s+', ' ', text.strip())
-        plain_text_content = re.sub('<(?!' + re.escape(url) + ')[^>]+>', '', email_msg['text/plain'])
-        plain_text_content = re.sub('(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
-        if text == url:
-            regex = re.escape(url)
-        else:
-            regex = re.sub(r'\\\s+', r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
-        match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
-        if not match:
-            regex = re.sub(r'\\\s+', r'\s+', re.escape(text))
-            match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
-        quote = match.group().strip()
-        if quote[0] in '.!?':
-            quote = quote[1:]
-        quote = re.sub(r'\s+', ' ', quote)
+        quote, regex = extract_quote(text, url, rawdatum['text/plain'])
+        tags = set(extract_tags(quote))
+        if 'truc' in quote:
+            quote = quote.replace('truc', '#truc')
+            tags.add('truc')
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
-        yield {'url': url, 'quote': quote, 'text': text}
+        for tag in tags:
+            quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
+        yield {'url': url, 'quote': quote, 'text': text, 'tags': tags, 'email': email_msg}
 
-def get_youtube_song_names(archive):
-    print('Now getting names of Youtube songs')
-    youtube_song_names_cache = archive['youtube_song_names_cache']
-    for _, email_msg in archive['emails'].items():
+def extract_quote(text, url, plain_text_content):
+    plain_text_content = re.sub('<(?!' + re.escape(url) + ')[^>]+>', '', plain_text_content)
+    plain_text_content = re.sub('(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
+    if text == url:
+        regex = re.escape(url)
+    else:
+        regex = re.sub(r'\\\s+', r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
+    match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
+    if not match:
+        regex = re.sub(r'\\\s+', r'\s+', re.escape(text))
+        match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
+    quote = match.group().strip()
+    if quote[0] in '.!?':
+        quote = quote[1:]
+    return re.sub(r'\s+', ' ', quote).strip(), regex
+
+def extract_tags(quote):
+    for match in re.findall(CATEGORY_HASHTAGS_RE, quote):
+        yield match[1]
+
+def add_page_titles(page_titles_cache, emails):
+    print('Now getting titles of all linked pages')
+    for email_msg in emails.values():
         for link in email_msg['links']:
-            if re.search(r'https?://(youtu\.be|(www\.)?youtube\.com)/.+', link['url']):
-                if link['url'] not in youtube_song_names_cache:
-                    youtube_song_names_cache[link['url']] = get_page_title(link['url'])
-                link['youtube_song_name'] = youtube_song_names_cache[link['url']]
+            if link['url'] not in page_titles_cache:
+                page_titles_cache[link['url']] = get_page_title(link['url'])
+            link['page_title'] = page_titles_cache[link['url']]
 
 def get_page_title(url):
     response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    response.raise_for_status()
-    return re.search('<title>([^<]+)</title>', response.text).group(1)
+    match = re.search('<title>([^<]+)</title>', response.text)
+    if match:
+        return match.group(1)
+    else:
+        return ''
 
-def compute_users_stats(emails):
+def aggregate_users(emails):
+    print('Now aggregating users based on their emails')
     users = {}
     def merge_user(user_email, user):
         if user_email not in users:
-            user['emails_received'] = 0
-            user['emails_sent'] = 0
             users[user_email] = user
-            return user
-        if user_email not in users:
-            users[user_email]['emails_received'] += user['emails_received']
-            users[user_email]['emails_sent'] += user['emails_sent']
-        if '@' in users[user_email]['name']:
+        elif '@' in users[user_email]['name']:
             users[user_email]['name'] = user['name']
         return users[user_email]
-    for _, email_msg in emails.items():
+    for email_msg in emails.values():
         for user_email, user in email_msg['src'].items():  # only one item in there
-            user = merge_user(user_email, user)
-            user['emails_sent'] += 1
-            email_msg['src'][user_email] = user
+            email_msg['src'][user_email] = merge_user(user_email, user)
         for user_email, user in email_msg['dests'].items():
-            user = merge_user(user_email, user)
-            user['emails_received'] += 1
-            email_msg['dests'][user_email] = user
-    assert len(emails) == sum(user['emails_sent'] for user_email, user in users.items())
+            email_msg['dests'][user_email] = merge_user(user_email, user)
     return users
 
 def fix_usernames(users, project_name):
@@ -225,14 +228,29 @@ def fix_usernames(users, project_name):
         if user_email in correct_usernames:
             user['name'] = correct_usernames[user_email]
 
-def generates_html_report(archive, project_name, email_subject, allmembers_email_dest):
+def compute_stats(emails):
+    print('Now computing some interesting statistics')
+    stats = {}
+    users_stats = stats['users'] = defaultdict(lambda: defaultdict(int))
+    for email_msg in emails.values():
+        for user in email_msg['src'].values():  # only one item in there
+            user_stats = users_stats[user['name']]
+            user_stats['emails_sent'] += 1
+            user_stats['links_shared'] += len(email_msg['links'])
+        for user in email_msg['dests'].values():
+            user_stats = users_stats[user['name']]
+            user_stats['emails_received'] += 1
+    assert len(emails) == sum(user_stats['emails_sent'] for user_name, user_stats in users_stats.items())
+    return stats
+
+def generates_html_report(archive, project_name, email_subject):
     print('Now generating the HTML report')
     env = Environment(loader=FileSystemLoader(THIS_SCRIPT_PARENT_DIR))
     #env.filters['format_date'] = jinja_format_date
     template = env.get_template('music_emails_spybot_report_template.html')
     html_report_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '.html')
     with open(html_report_path, 'w') as report_file:
-        report_file.write(template.render(project_name=project_name, email_subject=email_subject, allmembers_email_dest=allmembers_email_dest, **archive))
+        report_file.write(template.render(project_name=project_name, email_subject=email_subject, **archive))
 
 if __name__ == '__main__':
     main()

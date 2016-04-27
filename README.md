@@ -10,19 +10,19 @@
 
 ## Installation
 
-    pip3 install --user Jinja1 requests
+    pip3 install -r requirements.txt
 
 
 ## Usage
 
     read -s IMAP_PASSWORD
-    ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD --ignored-links-pattern 'novaplanet\.com|urbandictionary\.com|xkcd\.com|\.gif$|\.jpe?g$'
+    ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD
 
 
 ## Installation en tâche cronnée
 
     cat <<EOF > /etc/cron.d/music_emails_spybot_crontask
-    00 00 * * * root "$PWD/music_emails_spybot.py" ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD --ignored-links-pattern 'novaplanet\.com|urbandictionary\.com|xkcd\.com|\.gif$|\.jpe?g$' >> "$PWD/ComfySpy.log" 2>&1
+    00 00 * * * $USER (date && "$PWD/music_emails_spybot.py" ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD >> "$PWD/ComfySpy.log" 2>&1)
     EOF
 
 
