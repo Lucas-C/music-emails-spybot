@@ -194,7 +194,12 @@ def add_page_titles(page_titles_cache, emails):
             link['page_title'] = page_titles_cache[link['url']]
 
 def get_page_title(url):
-    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+    try:
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response.raise_for_status()
+    except requests.exceptions.RequestException as error:
+        print(error)
+        return ''
     match = re.search('<title>([^<]+)</title>', response.text)
     if match:
         return match.group(1)
