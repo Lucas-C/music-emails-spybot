@@ -13,7 +13,7 @@
       <h1>{{ project_name }}</h1>
       <div class="col-md-1"></div>
       <div class="col-md-10">
-        <a href="#"><img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" class="center-block"></a>
+        <a href="#"><img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" class="center-block" style="max-width: 100%"></a>
         {% if mailto_all_members %}
         <p class="text-center">
           <br>
@@ -55,9 +55,8 @@
               <td>{{ link.email.date_str }}</td>\
               <td>\
                 {% if link.page_title %}\
-                <div class="text-center">\
-                  <em>{{ link.page_title|replace("'", "&#39;") }}</em>\
-                </div>\
+                <em>{{ link.page_title|replace("'", "&#39;") }}</em>
+                <br>\
                 {% endif %}\
                 "{{ link.quote|replace("'", "&#39;") }}"\
               </td>\
