@@ -2,6 +2,11 @@
 
 ![](https://chezsoi.org/lucas/ComfySpy.jpg)
 
+You have been exchanging emails with links to music videos for years with some friends ?
+This script will generates an HTML page summarizing all those exchanges, as an archive to this precious playlist.
+
+Also: despite its name, this tool is in no way limited to music. It will happily scrape any hyperlinks in your emails.
+
 
 ## Demo
 
@@ -14,6 +19,9 @@
 
 
 ## Usage
+
+If you're using Gmail, all you really need is to generate an [app password for this script to access your emails](https://security.google.com/settings/security/apppasswords),
+and to give it a string that appears in all the subjects of the emails you want to parse :
 
     read -s IMAP_PASSWORD
     ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD
@@ -37,3 +45,10 @@ For the devs:
     pip3 install --user pre-commit
     pre-commit install
 
+
+## Ideas for new features
+
+- publish on Pypi
+- handle multiple input subjects / the full Gmail search syntax
+- auto-generate a Youtube playlist
+- i18n

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-#  jq 'del(.rawdata)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
-#  jq -r '.rawdata["17302"]["text/plain"]' < ComfySpy_bot_memory.json
+#  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 
 import argparse, email, html, json, re, requests, os, sys
 from collections import defaultdict
@@ -31,11 +30,14 @@ def main(argv=sys.argv[1:]):
     users = aggregate_users(emails)
     fix_usernames(users, args.project_name)
     archive['stats'] = compute_stats(emails)
-    archive['allmembers_email_dest'] = ';'.join(user_email for user_email, user in users.items()
-                                                           if archive['stats']['users'][user['name']]['emails_sent'])
+    archive['mailto_all_members'] = None
+    if not args.exclude_mailto_all_members:
+        archive['mailto_all_members'] = 'mailto:' + ';'.join(user_email for user_email, user in users.items()
+                                                                        if archive['stats']['users'][user['name']]['emails_sent'])\
+                                                  + '?subject=' + args.email_subject
     archive['links'] = [link for email_msg in emails.values()
                              for link in email_msg['links']]
-    generates_html_report(archive, args.project_name, args.email_subject)
+    generates_html_report(archive, args.project_name)
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Generates an HTML report of all mentioned songs in emails retrieved from IMAP server (e.g. Gmail)',
@@ -44,6 +46,7 @@ def parse_args(argv):
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=True)
     parser.add_argument('--ignored-links-pattern', default=r'\.gif$|\.jpe?g$', help=' ')
+    parser.add_argument('--exclude-mailto-all-members', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
@@ -157,9 +160,6 @@ def extract_links(rawdatum, ignored_links_pattern, email_msg):
         text = re.sub(r'\s+', ' ', text.strip())
         quote, regex = extract_quote(text, url, rawdatum['text/plain'])
         tags = set(extract_tags(quote))
-        if 'truc' in quote:
-            quote = quote.replace('truc', '#truc')
-            tags.add('truc')
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
         for tag in tags:
             quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
@@ -248,14 +248,14 @@ def compute_stats(emails):
     assert len(emails) == sum(user_stats['emails_sent'] for user_name, user_stats in users_stats.items())
     return stats
 
-def generates_html_report(archive, project_name, email_subject):
+def generates_html_report(archive, project_name):
     print('Now generating the HTML report')
     env = Environment(loader=FileSystemLoader(THIS_SCRIPT_PARENT_DIR))
     #env.filters['format_date'] = jinja_format_date
     template = env.get_template('music_emails_spybot_report_template.html')
     html_report_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '.html')
     with open(html_report_path, 'w') as report_file:
-        report_file.write(template.render(project_name=project_name, email_subject=email_subject, **archive))
+        report_file.write(template.render(project_name=project_name, **archive))
 
 if __name__ == '__main__':
     main()

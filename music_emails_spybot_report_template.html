@@ -14,11 +14,14 @@
       <div class="col-md-1"></div>
       <div class="col-md-10">
         <a href="#"><img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" class="center-block"></a>
+        {% if mailto_all_members %}
         <p class="text-center">
-          <a href="mailto:{{ allmembers_email_dest }}?subject={{ email_subject }}">Envoyer un email à tous les participants</a>
           <br>
-          <em>(est considéré participante toute personne ayant déjà contribué)</em>
+          <a href="{{ mailto_all_members }}">Envoyer un email à tous les participants actifs</a>
+          <br>
+          <em>(toute personne ayant déjà contribué)</em>
         </p>
+        {% endif %}
         <h3>Morceaux</h3>
           <div class="table-responsive">
             <table class="table table-striped">
@@ -53,7 +56,7 @@
               <td>\
                 {% if link.page_title %}\
                 <div class="text-center">\
-                  <em>Page title : <a href="{{ link.url }}">{{ link.page_title|replace("'", "&#39;") }}</a></em><br>\
+                  <em>{{ link.page_title|replace("'", "&#39;") }}</em>\
                 </div>\
                 {% endif %}\
                 "{{ link.quote|replace("'", "&#39;") }}"\
