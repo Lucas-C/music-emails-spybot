@@ -6,16 +6,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ project_name }}</title>
     <meta name="author" content="Lucas Cimon [ chezsoi.org/lucas ]"/>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+    <style>
+    * {
+      -webkit-box-sizing: border-box;
+      -moz-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.42857143;
+      color: #333;
+    }
+    h1 {
+      font-size: 36px;
+      font-weight: 500;
+    }
+    h3 {
+      font-size: 24px;
+      font-weight: 500;
+    }
+    a {
+      color: #337ab7;
+      text-decoration: none;
+    }
+    table {
+      border-spacing: 0;
+      border-collapse: collapse;
+    }
+    td, th {
+      padding: 8px;
+      line-height: 1.42857143;
+      border-top: 1px solid #ddd;
+    }
+    th {
+      border-bottom: 2px solid #ddd;
+      border-top: 0;
+    }
+    tbody > tr:nth-of-type(odd) {
+        background-color: #f9f9f9;
+    }
+    </style>
   </head>
   <body>
-    <div class="container">
+    <div style="margin: 0 auto; width: 800px">
       <h1>{{ project_name }}</h1>
-      <div class="col-md-1"></div>
-      <div class="col-md-10">
-        <a href="#"><img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" class="center-block" style="max-width: 100%"></a>
+        <a href="#">
+          <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg"
+               style="display: block; max-width: 100%; margin: 0 auto">
+        </a>
         {% if mailto_all_members %}
-        <p class="text-center">
+        <p style="text-align: center">
           <br>
           <a href="{{ mailto_all_members }}">Envoyer un email à tous les participants actifs</a>
           <br>
@@ -23,27 +65,23 @@
         </p>
         {% endif %}
         <h3>Morceaux</h3>
-          <div class="table-responsive">
-            <table class="table table-striped">
-              <thead>
-                <tr>
-                  <th class="col-md-2">Date</th>
-                  <th class="col-md-8">Description</th>
-                  <th class="col-md-2">Auteur</th>
-                </tr>
-              </thead>
-              <tbody>
-              </tbody>
-            </table>
-          </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width: 90px">Date</th>
+              <th>Description</th>
+              <th>Auteur</th>
+            </tr>
+          </thead>
+          <tbody>
+          </tbody>
+        </table>
         <h3>Stats</h3>
         {% for user_name, user_stats in stats.users.items()|sort(attribute='1.links_shared', reverse=True) %}
         <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
         {% endfor %}
-      </div>
-      <div class="col-md-1"></div>
     </div>
-    <footer style="padding: 5rem" class="text-center">
+    <footer style="padding: 50px; text-align: center">
       Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
     </footer>
     <script>
