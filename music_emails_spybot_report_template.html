@@ -54,7 +54,7 @@
       <h1>{{ project_name }}</h1>
         <a href="#">
           <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg"
-               style="display: block; max-width: 100%; margin: 0 auto">
+               style="display: block; max-width: 100%; margin: 0 auto" alt="Comfy mouse sleeping">
         </a>
         {% if mailto_all_members %}
         <p style="text-align: center">
@@ -77,9 +77,11 @@
           </tbody>
         </table>
         <h3>Stats</h3>
-        {% for user_name, user_stats in stats.users.items()|sort(attribute='1.links_shared', reverse=True) %}
-        <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
-        {% endfor %}
+        <ul>
+          {% for user_name, user_stats in stats.users.items()|sort(attribute='1.links_shared', reverse=True) %}
+          <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
+          {% endfor %}
+        </ul>
     </div>
     <footer style="padding: 50px; text-align: center">
       Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
