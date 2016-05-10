@@ -151,10 +151,10 @@ def extract_user_email_and_name(address):
         user_name = ''
     return user_email.lower(), user_name
 
-def extract_links(rawdatum, ignored_links_pattern, email_msg):
+def extract_links(rawdatum, ignored_links_pattern=None, email_msg=None):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
-        if re.search(ignored_links_pattern, url):
+        if ignored_links_pattern and re.search(ignored_links_pattern, url):
             print('- Ignoring link {} ({})'.format(text, url))
             continue
         if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
@@ -169,7 +169,7 @@ def extract_links(rawdatum, ignored_links_pattern, email_msg):
 
 def extract_quote(text, url, plain_text_content):
     plain_text_content = re.sub('<(?!' + re.escape(url) + ')[^>]+>', '', plain_text_content)
-    plain_text_content = re.sub('http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
+    plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
     plain_text_content = re.sub('(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
     if url in text:   # 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
         regex = re.escape(url)
