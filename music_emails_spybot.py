@@ -157,6 +157,8 @@ def extract_links(rawdatum, ignored_links_pattern, email_msg):
         if re.search(ignored_links_pattern, url):
             print('- Ignoring link {} ({})'.format(text, url))
             continue
+        if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
+            url = re.search('http(?!.+http).+', url).group()
         text = re.sub(r'\s+', ' ', text.strip())
         quote, regex = extract_quote(text, url, rawdatum['text/plain'])
         tags = set(extract_tags(quote))
@@ -167,8 +169,9 @@ def extract_links(rawdatum, ignored_links_pattern, email_msg):
 
 def extract_quote(text, url, plain_text_content):
     plain_text_content = re.sub('<(?!' + re.escape(url) + ')[^>]+>', '', plain_text_content)
+    plain_text_content = re.sub('http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
     plain_text_content = re.sub('(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
-    if text == url:
+    if url in text:   # 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
         regex = re.escape(url)
     else:
         regex = re.sub(r'\\\s+', r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
