@@ -151,7 +151,7 @@ def extract_user_email_and_name(address):
         user_name = ''
     return user_email.lower(), user_name
 
-def extract_links(rawdatum, ignored_links_pattern=None, email_msg=None):
+def extract_links(rawdatum, ignored_links_pattern, email_msg):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
         if ignored_links_pattern and re.search(ignored_links_pattern, url):

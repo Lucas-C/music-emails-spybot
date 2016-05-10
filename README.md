@@ -42,7 +42,7 @@ Bug reports or features suggestions are warmly welcome !
 
 For the devs:
 
-    pip3 install --user pre-commit
+    pip3 install pre-commit pytest
     pre-commit install
 
 

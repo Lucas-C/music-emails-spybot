@@ -4,7 +4,7 @@
     -   id: remove-crlf
     -   id: forbid-tabs
 -   repo: git://github.com/pre-commit/pre-commit-hooks
-    sha: 17478a0a50faf20fd8e5b3fefe7435cea410df0b
+    sha: 35548254adb636ce52b5574eb1904b8c795b673e
     hooks:
     -   id: check-merge-conflict
     -   id: check-yaml
@@ -13,9 +13,16 @@
         args:
         - --no-markdown-linebreak-ext
 -   repo: git://github.com/pre-commit/mirrors-pylint
-    sha: 029186c31774c24af446c428eafc59ce8980dcb9
+    sha: 4de6c8dfadef1a271a814561ce05b8bc1c446d22
     hooks:
     -   id: pylint
         args:
         - --rcfile=.pylintrc
         - --reports=no
+-   repo: local
+    hooks:
+    -   id: python-unit-tests
+        name: py.test
+        language: system
+        entry: sh -c py.test
+        files: ''
