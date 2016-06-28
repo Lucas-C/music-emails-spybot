@@ -2,7 +2,7 @@
 
 #  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 
-import argparse, email, html, json, re, requests, os, sys
+import argparse, email, hashlib, html, json, re, requests, os, sys
 from collections import defaultdict
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
@@ -20,9 +20,10 @@ CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
 def main(argv=sys.argv[1:]):
     args = parse_args(argv)
     archive = load_archive_from_file(args.project_name)
-    msgs = imap_get_new_msgs(args.email_subject, archive['rawdata'].keys(), args.imap_username, args.imap_password,
+    already_fetched_ids = sum([rawdatum['msg_ids'] for rawdatum in archive['rawdata'].values()], [])
+    msgs = imap_get_new_msgs(args.email_subject, already_fetched_ids, args.imap_username, args.imap_password,
                              args.imap_server_name, args.imap_server_port, args.imap_mailbox)
-    archive['rawdata'].update(extract_rawdata(msgs))
+    archive['rawdata'].update(dedupe_and_index_by_hash(extract_rawdata(msgs)))
     save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
     emails = extract_emails(archive['rawdata'], args.ignored_links_pattern)
     add_page_titles(archive['page_titles_cache'], emails)
@@ -85,6 +86,7 @@ def imap_get_new_msgs(email_subject, already_fetched_ids, user, password, server
         return_code, msgids = imap.search(None, 'SUBJECT', email_subject)
         assert return_code == 'OK' and len(msgids) == 1
         msgids = msgids[0].decode('ascii').split(' ')
+        print(len(msgids), 'matching messages found')
         msgids = set(msgids) - set(already_fetched_ids)
         print('Now fetching {} new messages'.format(len(msgids)))
         msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids}
@@ -119,6 +121,19 @@ def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
 def nested_merge(dst, src):
     for k, v in src.items():
         dst[k].update(v)
+
+def dedupe_and_index_by_hash(rawdata):
+    print('Now deduping rawdata (IMAP msgs often change ID, at least on Gmail)')
+    rawdata_by_hash = {}
+    for msg_id, rawdatum in rawdata.items():
+        hash_id = hashlib.md5('|'.join(k or '' for k in rawdatum.values()).encode('utf8')).hexdigest()
+        if hash_id not in rawdata_by_hash:
+            rawdata_by_hash[hash_id] = rawdatum
+            rawdata_by_hash[hash_id]['msg_ids'] = [msg_id]
+        else:
+            rawdata_by_hash[hash_id]['msg_ids'].append(msg_id)
+            print('- duplicates msgs found:', rawdata_by_hash[hash_id]['msg_ids'])
+    return rawdata_by_hash
 
 def extract_emails(rawdata, ignored_links_pattern):
     print('Now extracting meaningful info from raw data')
