@@ -126,7 +126,7 @@ def dedupe_and_index_by_hash(rawdata):
     print('Now deduping rawdata (IMAP msgs often change ID, at least on Gmail)')
     rawdata_by_hash = {}
     for msg_id, rawdatum in rawdata.items():
-        hash_id = hashlib.md5('|'.join(k or '' for k in rawdatum.values()).encode('utf8')).hexdigest()
+        hash_id = hashlib.md5('|'.join(v or '' for k, v in rawdatum.items() if k != 'msg_ids').encode('utf8')).hexdigest()
         if hash_id not in rawdata_by_hash:
             rawdata_by_hash[hash_id] = rawdatum
             rawdata_by_hash[hash_id]['msg_ids'] = [msg_id]
