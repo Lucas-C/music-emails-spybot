@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+#  jq '.rawdata|with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_bot_memory.json
 #  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 
 import argparse, email, hashlib, html, json, re, requests, os, sys
