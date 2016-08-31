@@ -15,17 +15,22 @@ THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 HEADER_EMAIL_SPLITTER_RE = re.compile(', ?\r?\n?\t?')
 HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?(cc:\s*)?([^"]+)"?\s+<(.+)>', re.DOTALL)
 HEADER_EMAIL_ADDRESS_RE = re.compile(r'[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}')
-CONTENT_LINK_TAGS_RE = re.compile(r'<a\s+href="?(http[^> "]*)"?\s*>([^<]*)</a>', re.DOTALL)
+CONTENT_LINK_TAGS_RE = re.compile(r'<a .*?href="?(http[^> "]*)"?[^>]*?>([^<]*?)</a>', re.DOTALL)
 CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
+
+HISTORY_LINE_PREFIX_RE = re.compile('\r\n>+')
+REPEATED_SPACE_RE = re.compile(r'\s+')
+ESCAPED_REPEATED_SPACE_RE = re.compile(r'\\\s+')
 
 def main(argv=sys.argv[1:]):
     args = parse_args(argv)
     archive = load_archive_from_file(args.project_name)
-    already_fetched_ids = sum([rawdatum['msg_ids'] for rawdatum in archive['rawdata'].values()], [])
-    msgs = imap_get_new_msgs(args.email_subject, already_fetched_ids, args.imap_username, args.imap_password,
-                             args.imap_server_name, args.imap_server_port, args.imap_mailbox)
-    archive['rawdata'].update(dedupe_and_index_by_hash(extract_rawdata(msgs)))
-    save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
+    if not args.rebuild_from_cache_only:
+        already_fetched_ids = sum([rawdatum['msg_ids'] for rawdatum in archive['rawdata'].values()], [])
+        msgs = imap_get_new_msgs(args.email_subject, already_fetched_ids, args.imap_username, args.imap_password,
+                                 args.imap_server_name, args.imap_server_port, args.imap_mailbox)
+        archive['rawdata'].update(dedupe_and_index_by_hash(extract_rawdata(msgs)))
+        save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
     emails = extract_emails(archive['rawdata'], args.ignored_links_pattern)
     add_page_titles(archive['page_titles_cache'], emails)
     save_archive_to_file(args.project_name, archive)
@@ -47,6 +52,7 @@ def parse_args(argv):
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=True)
+    parser.add_argument('--rebuild-from-cache-only', action='store_true')
     parser.add_argument('--ignored-links-pattern', default=r'\.gif$|\.jpe?g$', help=' ')
     parser.add_argument('--exclude-mailto-all-members', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
@@ -99,10 +105,14 @@ def imap_get_new_msgs(email_subject, already_fetched_ids, user, password, server
 def extract_rawdata(msgs):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
     email_msgs = {id: email.message_from_string(decode_ffs(msg[1][0][1])) for id, msg in msgs.items()}
-    rawdata = {id: {'Date': msg.get('Date'), 'From': msg.get('From'), 'To': msg.get('To'), 'Cc': msg.get('Cc')} for id, msg in email_msgs.items()}
-    nested_merge(rawdata, {id: {'text/html': get_msg_content(msg.get_payload(), 'text/html')} for id, msg in email_msgs.items()})
-    nested_merge(rawdata, {id: {'text/plain': get_msg_content(msg.get_payload(), 'text/plain')} for id, msg in email_msgs.items()})
-    return rawdata
+    return {id: {
+        'Date': msg.get('Date'),
+        'From': msg.get('From'),
+        'To': msg.get('To'),
+        'Cc': msg.get('Cc'),
+        'text/html': get_msg_content(msg.get_payload(), 'text/html'),
+        'text/plain': get_msg_content(msg.get_payload(), 'text/plain'),
+    } for id, msg in email_msgs.items()}
 
 def get_msg_content(msgs, target_content_type):
     if isinstance(msgs, str):
@@ -119,10 +129,6 @@ def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
     except UnicodeError:
         return bytestring.decode('latin1')
 
-def nested_merge(dst, src):
-    for k, v in src.items():
-        dst[k].update(v)
-
 def dedupe_and_index_by_hash(rawdata):
     print('Now deduping rawdata (IMAP msgs often change ID, at least on Gmail)')
     rawdata_by_hash = {}
@@ -138,10 +144,15 @@ def dedupe_and_index_by_hash(rawdata):
 
 def extract_emails(rawdata, ignored_links_pattern):
     print('Now extracting meaningful info from raw data')
-    emails = {id: {'id': id} for id in rawdata.keys()}
-    nested_merge(emails, {id: format_date(datum['Date']) for id, datum in rawdata.items()})
-    nested_merge(emails, {id: extract_src_dst(datum) for id, datum in rawdata.items()})
-    nested_merge(emails, {id: {'links': list(extract_links(datum, ignored_links_pattern, emails[id]))} for id, datum in rawdata.items()})
+    emails = {}
+    for msg_id, rawdatum in rawdata.items():
+        email_msg = {'id': msg_id, 'links': []}
+        email_msg.update(format_date(rawdatum['Date']))
+        email_msg.update(extract_src_dst(rawdatum))
+        emails[msg_id] = email_msg
+    links = extract_all_links(rawdata, emails, ignored_links_pattern)
+    for link in links:
+        link['email']['links'].append(link)
     return emails
 
 def format_date(date):
@@ -161,44 +172,56 @@ def extract_user_email_and_name(address):
         user_name, charset = decode_header(user_name_label)[0]
         if charset:
             user_name = user_name.decode(charset)
-        user_name = re.sub(r'\s+', ' ', user_name)
+        user_name = concatenate_repeated_spaces(user_name)
     else:
         user_email = HEADER_EMAIL_ADDRESS_RE.match(address.strip().lower()).group()
         user_name = ''
     return user_email.lower(), user_name
 
-def extract_links(rawdatum, ignored_links_pattern, email_msg):
+def extract_all_links(rawdata, emails, ignored_links_pattern):
+    links_per_url = {}
+    for msg_id, rawdatum in rawdata.items():
+        extract_links(rawdatum, emails[msg_id], links_per_url, ignored_links_pattern)
+    return [link for link in links_per_url.values() if link]
+
+def extract_links(rawdatum, email_msg, links_per_url, ignored_links_pattern):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
+        if url in links_per_url:
+            similar_link = links_per_url[url]
+            if not similar_link or similar_link['email']['timestamp'] < email_msg['timestamp']:
+                continue
         if ignored_links_pattern and re.search(ignored_links_pattern, url):
             print('- Ignoring link {} ({})'.format(text, url))
+            links_per_url[url] = False
             continue
         if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
             url = re.search('http(?!.+http).+', url).group()
-        text = re.sub(r'\s+', ' ', text.strip())
+        text = concatenate_repeated_spaces(text.strip())
         quote, regex = extract_quote(text, url, rawdatum['text/plain'])
         tags = set(extract_tags(quote))
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
         for tag in tags:
             quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
-        yield {'url': url, 'quote': quote, 'text': text, 'tags': tags, 'email': email_msg}
+        links_per_url[url] = {'url': url, 'quote': quote, 'text': text, 'tags': tags, 'email': email_msg}
 
 def extract_quote(text, url, plain_text_content):
-    plain_text_content = re.sub('<(?!' + re.escape(url) + ')[^>]+>', '', plain_text_content)
+    plain_text_content = re.sub(HISTORY_LINE_PREFIX_RE, '', plain_text_content)
+    plain_text_content = re.sub(r'<(?!' + re.escape(url) + r')[^>]+>', '', plain_text_content)
     plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
-    plain_text_content = re.sub('(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
+    plain_text_content = re.sub(r'(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
     if url in text:   # 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
         regex = re.escape(url)
     else:
-        regex = re.sub(r'\\\s+', r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
+        regex = re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
     match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
     if not match:
-        regex = re.sub(r'\\\s+', r'\s+', re.escape(text))
+        regex = re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text))
         match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
     quote = match.group().strip()
     if quote[0] in '.!?':
         quote = quote[1:]
-    return re.sub(r'\s+', ' ', quote).strip(), regex
+    return concatenate_repeated_spaces(quote.strip()), regex
 
 def extract_tags(quote):
     for match in re.findall(CATEGORY_HASHTAGS_RE, quote):
@@ -275,6 +298,9 @@ def generates_html_report(archive, project_name):
     html_report_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '.html')
     with open(html_report_path, 'w') as report_file:
         report_file.write(template.render(project_name=project_name, **archive))
+
+def concatenate_repeated_spaces(text):
+    return re.sub(REPEATED_SPACE_RE, ' ', text)
 
 if __name__ == '__main__':
     main()
