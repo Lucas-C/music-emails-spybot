@@ -7,9 +7,10 @@ def test_tags_extraction():
         'text/plain': 'Merci :)\r\nBwarf, j\'ai pas trop envie de paginer franchement.\r\n\r\nAllez zou, un petit morceau de #pop qui rend #happy :\r\nhttps://www.youtube.com/watch?v=uJ_1HMAGb4k\r\n\r\n',
     }
 
-    links = list(extract_links(rawdatum, email_msg=None, links_per_url={}, ignored_links_pattern=None))
+    links_per_url = {}
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
 
-    assert links[0]['quote'] == 'Allez zou, un petit morceau de <a href="#pop">#pop</a> qui rend <a href="#happy">#happy</a> : <a href="https://www.youtube.com/watch?v=uJ_1HMAGb4k">https://www.youtube.com/watch?v=uJ_1HMAGb4k</a>'
+    assert links_per_url['https://www.youtube.com/watch?v=uJ_1HMAGb4k']['quote'] == 'Allez zou, un petit morceau de <a href="#pop">#pop</a> qui rend <a href="#happy">#happy</a> : <a href="https://www.youtube.com/watch?v=uJ_1HMAGb4k">https://www.youtube.com/watch?v=uJ_1HMAGb4k</a>'
 
 
 def test_multiple_links_with_same_quote():
@@ -18,10 +19,11 @@ def test_multiple_links_with_same_quote():
         'text/plain': 'Je ne vais pas trop m’étendre étant donné que je n\'est bien exploré que\r\nleur dernier album pour le moment (Cooking with pagans\r\n<https://i.ytimg.com/vi/4-FTRHflHFs/maxresdefault.jpg>), mais c\'est du Hard\r\nRock <https://www.youtube.com/watch?v=y9ytbURTs40>, Heavy Metal\r\n<https://www.youtube.com/watch?v=tRx8AAht9jY>, Progressive Metal\r\n<https://www.youtube.com/watch?v=30bQJuKbN3E> bien barré (mention spéciale\r\npour "Anal bleach <https://www.youtube.com/watch?v=qoSpzbE31KA>" et toute\r\nla poésie qui se dégage du titre).',
     }
 
-    links = list(extract_links(rawdatum, email_msg=None, links_per_url={}, ignored_links_pattern=None))
+    links_per_url = {}
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
 
-    assert len(links) == 5  # 4 Youtube links + 1 jpg
-    assert all(link['quote'].count('<a href=') == 1 for link in links)
+    assert len(links_per_url) == 5  # 4 Youtube links + 1 jpg
+    assert all(link['quote'].count('<a href=') == 1 for link in links_per_url.values())
 
 
 def test_workaround_typo():
@@ -30,9 +32,10 @@ def test_workaround_typo():
         'text/plain': '\r\nhttp://https://www.youtube.com/watch?v=Qt-of-5EwhU\r\n\r\n',
     }
 
-    links = list(extract_links(rawdatum, email_msg=None, links_per_url={}, ignored_links_pattern=None))
+    links_per_url = {}
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
 
-    assert links[0]['quote'] == '<a href="https://www.youtube.com/watch?v=Qt-of-5EwhU">http://https://www.youtube.com/watch?v=Qt-of-5EwhU</a>'
+    assert links_per_url['https://www.youtube.com/watch?v=Qt-of-5EwhU']['quote'] == '<a href="https://www.youtube.com/watch?v=Qt-of-5EwhU">http://https://www.youtube.com/watch?v=Qt-of-5EwhU</a>'
 
 
 def test_gmail_styled_hrefs_extraction():
@@ -41,6 +44,7 @@ def test_gmail_styled_hrefs_extraction():
         'text/plain': "Petit partage à mon tour, pour vous faire découvrir Cabadzi !\r\nhttps://www.youtube.com/watch?v=YnEBdT75RUQ\r\nhttps://www.youtube.com/watch?v=42-Xq5VYrLE\r\nhttps://www.youtube.com/watch?v=IHpR0sP5xXo\r\nça ressemble un peu à FAUVE je trouve\r\npas sûr que ça vous plaise, mais j'adhère bien ;)\r\n\r",
     }
 
-    links = list(extract_links(rawdatum, email_msg=None, links_per_url={}, ignored_links_pattern=None))
+    links_per_url = {}
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
 
-    assert len(links) == 3
+    assert len(links_per_url) == 3
