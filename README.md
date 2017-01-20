@@ -1,3 +1,5 @@
+[![](https://travis-ci.org/Lucas-C/music-emails-spybot.svg?branch=master)](https://travis-ci.org/Lucas-C/music-emails-spybot)
+
 # Music emails Spybot
 
 ![](https://chezsoi.org/lucas/ComfySpy.jpg)
