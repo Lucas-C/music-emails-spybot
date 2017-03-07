@@ -187,6 +187,9 @@ def extract_all_links(rawdata, emails, ignored_links_pattern):
 def extract_links(rawdatum, email_msg, links_per_url, ignored_links_pattern):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
+        text = text.strip()
+        if not text:
+            continue
         if url in links_per_url:
             similar_link = links_per_url[url]
             if not similar_link or similar_link['email']['timestamp'] < email_msg['timestamp']:
@@ -197,7 +200,7 @@ def extract_links(rawdatum, email_msg, links_per_url, ignored_links_pattern):
             continue
         if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
             url = re.search('http(?!.+http).+', url).group()
-        text = concatenate_repeated_spaces(text.strip())
+        text = concatenate_repeated_spaces(text)
         quote, regex = extract_quote(text, url, rawdatum['text/plain'])
         tags = set(extract_tags(quote))
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
