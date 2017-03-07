@@ -53,7 +53,7 @@ def parse_args(argv):
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=True)
     parser.add_argument('--rebuild-from-cache-only', action='store_true')
-    parser.add_argument('--ignored-links-pattern', default=r'\.gif$|\.jpe?g$', help=' ')
+    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$', help=' ')
     parser.add_argument('--exclude-mailto-all-members', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
