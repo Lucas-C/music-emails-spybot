@@ -47,6 +47,10 @@ For the devs:
     pip3 install pre-commit pytest
     pre-commit install
 
+Executing a single test:
+
+    py.test -k test_fct
+
 
 ## Ideas for new features
 

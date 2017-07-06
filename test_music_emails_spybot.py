@@ -1,3 +1,5 @@
+from quopri import decodestring as email_decode  # quoted-printable encoding
+
 from music_emails_spybot import extract_links
 
 
@@ -48,3 +50,15 @@ def test_gmail_styled_hrefs_extraction():
     extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
 
     assert len(links_per_url) == 3
+
+
+def test_quoted_printable_non_breaking_space(): # =C2=A0
+    links_per_url = {}
+    extract_links(rawdatum={
+        'text/html': email_decode('''<div>Hypnotiq=
+ue/m=C3=A9lancolique :=C2=A0<a href=3D"https://www.youtube.com/watch?v=3Do6=
+SprGmHTy4">https://www.youtube.com/watch?v=3Do6SprGmHTy4</a></div>''').decode(),
+        'text/plain': email_decode('''Hypnotique/m=C3=A9lancolique : https://www.youtube.com/watch?v=3Do6SprGmHTy=
+4''').decode(),
+    }, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
+    assert len(links_per_url) == 1

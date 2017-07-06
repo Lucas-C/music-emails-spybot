@@ -23,7 +23,7 @@ HISTORY_LINE_PREFIX_RE = re.compile('\r\n>+')
 REPEATED_SPACE_RE = re.compile(r'\s+')
 ESCAPED_REPEATED_SPACE_RE = re.compile(r'\\\s+')
 
-def main(argv=sys.argv[1:]):
+def main(argv=None):
     args = parse_args(argv)
     archive = load_archive_from_file(args.project_name)
     if not args.rebuild_from_cache_only:
@@ -246,10 +246,9 @@ def get_page_title(url):
         print(error)
         return ''
     match = re.search('<title>([^<]+)</title>', response.text)
-    if match:
-        return match.group(1)
-    else:
+    if not match:
         return ''
+    return match.group(1)
 
 def aggregate_users(emails):
     print('Now aggregating users based on their emails')
