@@ -56,10 +56,11 @@
           <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg"
                style="display: block; max-width: 100%; margin: 0 auto" alt="Comfy mouse sleeping">
         </a>
-        {% if mailto_all_members %}
+        {% if mailto_href_base64 %}
         <p style="text-align: center">
           <br>
-          <a href="{{ mailto_all_members }}">Envoyer un email à tous les participants actifs</a>
+          <!-- obfuscating with JS to avoid email scraping -->
+          <a href="#" onfocus="this.href = atob('{{ mailto_href_base64 }}')">Envoyer un email à tous les participants actifs</a>
           <br>
           <em>(toute personne ayant déjà contribué)</em>
         </p>
