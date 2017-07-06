@@ -4,6 +4,7 @@
 #  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 
 import argparse, email, hashlib, html, json, re, requests, os, sys
+from base64 import b64encode
 from collections import defaultdict
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
@@ -37,11 +38,11 @@ def main(argv=sys.argv[1:]):
     users = aggregate_users(emails)
     fix_usernames(users, args.project_name)
     archive['stats'] = compute_stats(emails)
-    archive['mailto_all_members'] = None
-    if not args.exclude_mailto_all_members:
-        archive['mailto_all_members'] = 'mailto:' + ';'.join(user_email for user_email, user in users.items()
-                                                                        if archive['stats']['users'][user['name']]['emails_sent'])\
-                                                  + '?subject=' + args.email_subject
+    archive['mailto_href_base64'] = None
+    if not args.exclude_mailto:
+        archive['mailto_href_base64'] = b64encode('mailto:' + ';'.join(user_email for user_email, user in users.items()
+                                                                       if archive['stats']['users'][user['name']]['emails_sent'])\
+                                                  + '?subject=' + args.email_subject)
     archive['links'] = [link for email_msg in emails.values()
                              for link in email_msg['links']]
     generates_html_report(archive, args.project_name)
@@ -54,7 +55,7 @@ def parse_args(argv):
     parser.add_argument('--email-subject', required=True)
     parser.add_argument('--rebuild-from-cache-only', action='store_true')
     parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$', help=' ')
-    parser.add_argument('--exclude-mailto-all-members', action='store_true', help='So that no email appears in the HTML page')
+    parser.add_argument('--exclude-mailto', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
