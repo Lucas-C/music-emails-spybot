@@ -40,9 +40,8 @@ def main(argv=sys.argv[1:]):
     archive['stats'] = compute_stats(emails)
     archive['mailto_href_base64'] = None
     if not args.exclude_mailto:
-        archive['mailto_href_base64'] = b64encode('mailto:' + ';'.join(user_email for user_email, user in users.items()
-                                                                       if archive['stats']['users'][user['name']]['emails_sent'])\
-                                                  + '?subject=' + args.email_subject)
+        dest = ';'.join(user_email for user_email, user in users.items() if archive['stats']['users'][user['name']]['emails_sent'])
+        archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + args.email_subject).encode()).decode()
     archive['links'] = [link for email_msg in emails.values()
                              for link in email_msg['links']]
     generates_html_report(archive, args.project_name)
