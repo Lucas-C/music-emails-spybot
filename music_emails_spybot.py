@@ -5,11 +5,12 @@
 
 import argparse, email, hashlib, html, json, re, requests, os
 from base64 import b64encode
-from collections import defaultdict
+from collections import Counter, defaultdict
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from imaplib import IMAP4_SSL
 from jinja2 import Environment, FileSystemLoader
+from urllib.parse import urlparse
 
 THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -37,13 +38,14 @@ def main(argv=None):
     save_archive_to_file(args.project_name, archive)
     users = aggregate_users(emails)
     fix_usernames(users, args.project_name)
-    archive['stats'] = compute_stats(emails)
+    archive['links'] = [link for email_msg in emails.values()
+                             for link in email_msg['links']]
+    archive['youtube_stats'] = compute_youtube_stats(archive['links'], args.youtube_api_key) if args.youtube_api_key else {}
+    archive['email_stats'] = compute_email_stats(emails)
     archive['mailto_href_base64'] = None
     if not args.exclude_mailto:
         dest = ';'.join(user_email for user_email, user in users.items() if archive['stats']['users'][user['name']]['emails_sent'])
         archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + args.email_subject).encode()).decode()
-    archive['links'] = [link for email_msg in emails.values()
-                             for link in email_msg['links']]
     generates_html_report(archive, args.project_name)
 
 def parse_args(argv):
@@ -58,6 +60,7 @@ def parse_args(argv):
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
+    parser.add_argument('--youtube-api-key', help=' ')
     parser.add_argument('project_name')
     return parser.parse_args(argv)
 
@@ -277,8 +280,39 @@ def fix_usernames(users, project_name):
         if user_email in correct_usernames:
             user['name'] = correct_usernames[user_email]
 
-def compute_stats(emails):
-    print('Now computing some interesting statistics')
+def compute_youtube_stats(links, youtube_api_key):
+    print('Now computing statistics on Youtube songs topics')
+    youtube_video_ids = list(extract_youtube_video_ids([link['url'] for link in links]))
+    print('({} youtube video IDs found)'.format(len(youtube_video_ids)))
+    video_topics_per_id = get_youtube_videos_topics(youtube_api_key, youtube_video_ids)
+    return Counter(sum(video_topics_per_id.values(), []))
+
+def extract_youtube_video_ids(urls):
+    for url in urls:
+        parsed_url = urlparse(url)
+        if parsed_url.hostname == 'youtu.be':
+            yield parsed_url.path[1:]
+        elif parsed_url.hostname == 'www.youtube.com':
+            yield parsed_url.query[2:13]
+
+def get_youtube_videos_topics(youtube_api_key, video_ids, videos_details_request_batch_size=50):
+    video_topics_per_id = {}
+    batch_start_index = 0
+    while batch_start_index < len(video_ids):
+        videos_ids_batch = video_ids[batch_start_index:batch_start_index + videos_details_request_batch_size]
+        response = requests.get('https://www.googleapis.com/youtube/v3/videos', params={
+            'key': youtube_api_key,
+            'id': ','.join(videos_ids_batch),  # it is not clearly documented, but the API does not accept more than 50 ids here
+            'maxResults': videos_details_request_batch_size,
+            'part': 'topicDetails', # cf. https://developers.google.com/youtube/v3/docs/videos/list#parameters
+        }).json()
+        for item in response['items']:
+            video_topics_per_id[item['id']] = [cat.replace('https://en.wikipedia.org/wiki/', '') for cat in item['topicDetails']['topicCategories']] if 'topicDetails' in item else []
+        batch_start_index += videos_details_request_batch_size
+    return video_topics_per_id
+
+def compute_email_stats(emails):
+    print('Now computing statistics on emails sent')
     stats = {}
     users_stats = stats['users'] = defaultdict(lambda: defaultdict(int))
     for email_msg in emails.values():

@@ -78,12 +78,21 @@
           </tbody>
         </table>
         <h3>Stats</h3>
+        <h4>Contributeurs</h4>
         <ul>
-          {% for user_name, user_stats in stats.users.items()|sort(attribute='1.links_shared', reverse=True) if
+          {% for user_name, user_stats in email_stats.users.items()|sort(attribute='1.links_shared', reverse=True) if
  user_stats.emails_sent %}
           <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
           {% endfor %}
         </ul>
+        {% if len(youtube_stats) %}
+        <h4>Classification Youtube des musiques</h4>
+        <ul>
+          {% for topic, count in youtube_stats.items()|sort(attribute='1', reverse=True) %}
+          <li>{{ topic }} : {{ count }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
     </div>
     <footer style="padding: 50px; text-align: center">
       Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
