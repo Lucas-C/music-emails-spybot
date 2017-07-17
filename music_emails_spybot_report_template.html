@@ -85,7 +85,7 @@
           <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
           {% endfor %}
         </ul>
-        {% if len(youtube_stats) %}
+        {% if youtube_stats|length %}
         <h4>Classification Youtube des musiques</h4>
         <ul>
           {% for topic, count in youtube_stats.items()|sort(attribute='1', reverse=True) %}
