@@ -102,10 +102,11 @@
         var links = [
           {% for link in links|sort(attribute='email.timestamp', reverse=True) %}
             {timestamp: {{ link.email.timestamp }}, tags: {{ link.tags|list }}, element: trFromString('\
-            <tr><!-- email.id: {{ link.email.id }} - email.timestamp: {{ link.email.timestamp }} -->\
+            <tr {{ 'style="background-color: #f2dede"' if link.page_title.startswith('ERROR:') }}>\
+              <!-- email.id: {{ link.email.id }} - email.timestamp: {{ link.email.timestamp }} -->\
               <td>{{ link.email.date_str }}</td>\
               <td>\
-                {% if link.page_title %}\
+                {% if link.page_title and not link.page_title.startswith('ERROR:') %}\
                 <em>{{ link.page_title|replace("'", "&#39;") }}</em>\
                 <br>\
                 {% endif %}\

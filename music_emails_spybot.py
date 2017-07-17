@@ -247,11 +247,10 @@ def get_page_title(url):
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         response.raise_for_status()
     except requests.exceptions.RequestException as error:
-        print(error)
-        return ''
+        return 'ERROR: {}'.format(error)
     match = re.search('<title>([^<]+)</title>', response.text)
     if not match:
-        return ''
+        return 'ERROR: NO TITLE'
     return match.group(1)
 
 def aggregate_users(emails):
