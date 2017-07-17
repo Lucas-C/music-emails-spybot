@@ -9,8 +9,9 @@ from collections import Counter, defaultdict
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from imaplib import IMAP4_SSL
-from jinja2 import Environment, FileSystemLoader
 from urllib.parse import urlparse
+
+from jinja2 import Environment, FileSystemLoader
 
 THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -44,7 +45,7 @@ def main(argv=None):
     archive['email_stats'] = compute_email_stats(emails)
     archive['mailto_href_base64'] = None
     if not args.exclude_mailto:
-        dest = ';'.join(user_email for user_email, user in users.items() if archive['stats']['users'][user['name']]['emails_sent'])
+        dest = ';'.join(user_email for user_email, user in users.items() if archive['email_stats']['users'][user['name']]['emails_sent'])
         archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + args.email_subject).encode()).decode()
     generates_html_report(archive, args.project_name)
 
