@@ -1,4 +1,5 @@
 [![](https://travis-ci.org/Lucas-C/music-emails-spybot.svg?branch=master)](https://travis-ci.org/Lucas-C/music-emails-spybot)
+[![Known Vulnerabilities](https://snyk.io/test/github/lucas-c/music-emails-spybot/badge.svg)](https://snyk.io/test/github/lucas-c/music-emails-spybot)
 
 # Music emails Spybot
 
