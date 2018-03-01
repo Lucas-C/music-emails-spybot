@@ -3,7 +3,7 @@
 #  jq '.rawdata|with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_bot_memory.json
 #  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
 
-import argparse, email, hashlib, html, json, re, requests, os
+import argparse, email, hashlib, html, json, re, requests, os, sys
 from base64 import b64encode
 from collections import Counter, defaultdict
 from email.header import decode_header
@@ -17,6 +17,7 @@ THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 HEADER_EMAIL_SPLITTER_RE = re.compile(', ?\r?\n?\t?')
 HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?(cc:\s*)?([^"]+)"?\s+<(.+)>', re.DOTALL)
+HEADER_EMAIL_ML_USER_ADDRESS_RE = re.compile(r'"(.+)" \(.+\)')
 HEADER_EMAIL_ADDRESS_RE = re.compile(r'[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}')
 CONTENT_LINK_TAGS_RE = re.compile(r'<a .*?href="?(http[^> "]*)"?[^>]*?>([^<]*?)</a>', re.DOTALL)
 CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
@@ -170,17 +171,33 @@ def extract_src_dst(rawdatum):
             'dests': {email: {'name': name} for email, name in (extract_user_email_and_name(dest) for dest in dests)}}
 
 def extract_user_email_and_name(address):
-    match = HEADER_EMAIL_USER_ADDRESS_RE.match(address.strip())
+    'Return (user_email, user_name) : the 2nd value only is assured to be non-empty'
+    address = address.strip().lower()
+    if not address:
+        raise ValueError('Empty From/To/Cc email address: {}'.format(address))
+    match = HEADER_EMAIL_USER_ADDRESS_RE.match(address)
     if match:
         user_name_label, user_email = match.group(2, 3)
         user_name, charset = decode_header(user_name_label)[0]
         if charset:
-            user_name = user_name.decode(charset)
-        user_name = concatenate_repeated_spaces(user_name)
-    else:
-        user_email = HEADER_EMAIL_ADDRESS_RE.match(address.strip().lower()).group()
-        user_name = ''
-    return user_email.lower(), user_name
+            try:
+                user_name = user_name.decode(charset)
+            except UnicodeDecodeError:
+                if charset.lower().replace('-', '') != 'utf8':
+                    raise
+                # decoding as UTF8 failed, attempting another well-known charset
+                user_name = user_name.decode('latin1')
+        return user_email.lower(), concatenate_repeated_spaces(user_name)
+    match = HEADER_EMAIL_ML_USER_ADDRESS_RE.match(address)
+    if match:
+        user_name = match.group(1).lower()
+        return user_name, user_name  # returning user_name as user_email in order for `fix_usernames` to be usable
+    match = HEADER_EMAIL_ADDRESS_RE.match(address)
+    if match:
+        user_email = match.group().lower()
+        return user_email, user_email
+    print('Could not parse email address in From/To/Cc field: {}'.format(address), file=sys.stderr)  # warn
+    return '', address
 
 def extract_all_links(rawdata, emails, ignored_links_pattern):
     links_per_url = {}

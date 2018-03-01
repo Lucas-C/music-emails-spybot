@@ -1,6 +1,6 @@
 from quopri import decodestring as email_decode  # quoted-printable encoding
 
-from music_emails_spybot import extract_links
+from music_emails_spybot import extract_links, extract_user_email_and_name
 
 
 def test_tags_extraction():
@@ -62,3 +62,10 @@ SprGmHTy4">https://www.youtube.com/watch?v=3Do6SprGmHTy4</a></div>''').decode(),
 4''').decode(),
     }, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
     assert len(links_per_url) == 1
+
+
+def test_extract_user_email_and_name():
+    assert extract_user_email_and_name('bob anderson <bob@anderson.org>') == ('bob@anderson.org', 'bob anderson')
+    assert extract_user_email_and_name('cc: bob anderson <bob@anderson.org>') == ('bob@anderson.org', 'bob anderson')
+    assert extract_user_email_and_name('"bob anderson" (via comfy mailing list)') == ('bob anderson', 'bob anderson')
+    assert extract_user_email_and_name('bob@anderson.org') == ('bob@anderson.org', 'bob@anderson.org')
