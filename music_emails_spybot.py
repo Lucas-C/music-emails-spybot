@@ -2,6 +2,7 @@
 
 #  jq '.rawdata|with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_bot_memory.json
 #  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
+#  jq '.rawdata|with_entries(select(.value.msg_ids[]|contains("18205")))' < ComfySpy_bot_memory.json
 
 import argparse, email, hashlib, html, json, re, requests, os, sys
 from base64 import b64encode
@@ -31,8 +32,7 @@ def main(argv=None):
     archive = load_archive_from_file(args.project_name)
     if not args.rebuild_from_cache_only:
         already_fetched_ids = sum([rawdatum['msg_ids'] for rawdatum in archive['rawdata'].values()], [])
-        msgs = imap_get_new_msgs(args.email_subject, already_fetched_ids, args.imap_username, args.imap_password,
-                                 args.imap_server_name, args.imap_server_port, args.imap_mailbox)
+        msgs = imap_get_new_msgs(args, already_fetched_ids)
         archive['rawdata'].update(dedupe_and_index_by_hash(extract_rawdata(msgs)))
         save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
     emails = extract_emails(archive['rawdata'], args.ignored_links_pattern)
@@ -47,7 +47,7 @@ def main(argv=None):
     archive['mailto_href_base64'] = None
     if not args.exclude_mailto:
         dest = ';'.join(user_email for user_email, user in users.items() if archive['email_stats']['users'][user['name']]['emails_sent'])
-        archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + args.email_subject).encode()).decode()
+        archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + (args.email_subject or args.project_name)).encode()).decode()
     generates_html_report(archive, args.project_name)
 
 def parse_args(argv):
@@ -55,7 +55,8 @@ def parse_args(argv):
                                      formatter_class=ArgparseHelpFormatter)
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
-    parser.add_argument('--email-subject', required=True)
+    parser.add_argument('--email-subject', required=False)
+    parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true')
     parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$', help=' ')
     parser.add_argument('--exclude-mailto', action='store_true', help='So that no email appears in the HTML page')
@@ -64,7 +65,10 @@ def parse_args(argv):
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
     parser.add_argument('--youtube-api-key', help=' ')
     parser.add_argument('project_name')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not args.email_subject and not args.email_dest:
+        parser.error('--email-subject or --email-dest required')
+    return args
 
 class ArgparseHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
     pass
@@ -87,25 +91,36 @@ def save_archive_to_file(project_name, archive):
     with open(db_file_path, 'w') as archive_file:
         json.dump(archive, archive_file)
 
-def imap_get_new_msgs(email_subject, already_fetched_ids, user, password, server_name, server_port, mailbox):
-    imap = IMAP4_SSL(server_name, server_port)
+def imap_get_new_msgs(args, already_fetched_ids):
+    imap = IMAP4_SSL(args.imap_server_name, args.imap_server_port)
     try:
-        return_code, msgids = imap.login(user, password)
+        return_code, msgids = imap.login(args.imap_username, args.imap_password)
         assert msgids[0].endswith(b' authenticated (Success)') and return_code == 'OK'
-        return_code, msgids = imap.select(mailbox=mailbox, readonly=True)
+        return_code, msgids = imap.select(mailbox=args.imap_mailbox, readonly=True)
         assert return_code == 'OK'
-        print('Now searching for messages in {} matching subject "{}"'.format(mailbox, email_subject))
-        return_code, msgids = imap.search(None, 'SUBJECT', email_subject)
-        assert return_code == 'OK' and len(msgids) == 1
-        msgids = msgids[0].decode('ascii').split(' ')
-        print(len(msgids), 'matching messages found')
-        msgids = set(msgids) - set(already_fetched_ids)
+        msgids = set()
+        if args.email_subject:
+            print('Now searching for messages in {} matching subject "{}"'.format(args.imap_mailbox, args.email_subject))
+            matching_msgids = imap_search(imap, 'SUBJECT', args.email_subject)
+            print(len(matching_msgids), 'matching messages found')
+            msgids.update(set(matching_msgids) - set(already_fetched_ids))
+        if args.email_dest:
+            print('Now searching for messages in {} width dest "{}"'.format(args.imap_mailbox, args.email_dest))
+            matching_msgids = imap_search(imap, 'TO', args.email_dest)
+            print(len(matching_msgids), 'matching messages found')
+            msgids.update(set(matching_msgids) - set(already_fetched_ids))
         print('Now fetching {} new messages'.format(len(msgids)))
         msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids}
         assert all(msg[0] == 'OK' for msg in msgs.values())
         return msgs
     finally:
         imap.logout()
+
+def imap_search(imap, *args):
+    return_code, msgids = imap.search(None, *args)
+    assert return_code == 'OK' and len(msgids) == 1
+    msgids = msgids[0].decode('ascii').split(' ')
+    return msgids
 
 def extract_rawdata(msgs):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
