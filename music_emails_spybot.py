@@ -119,8 +119,7 @@ def imap_get_new_msgs(args, already_fetched_ids):
 def imap_search(imap, *args):
     return_code, msgids = imap.search(None, *args)
     assert return_code == 'OK' and len(msgids) == 1
-    msgids = msgids[0].decode('ascii').split(' ')
-    return msgids
+    return msgids[0].decode('ascii').split(' ')
 
 def extract_rawdata(msgs):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
