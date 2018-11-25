@@ -69,3 +69,4 @@ def test_extract_user_email_and_name():
     assert extract_user_email_and_name('cc: bob anderson <bob@anderson.org>') == ('bob@anderson.org', 'bob anderson')
     assert extract_user_email_and_name('"bob anderson" (via comfy mailing list)') == ('bob anderson', 'bob anderson')
     assert extract_user_email_and_name('bob@anderson.org') == ('bob@anderson.org', 'bob@anderson.org')
+    assert extract_user_email_and_name('le =?utf-8?q?rest=2c_na=c3=afg?= <kikoo@hotmail.fr>') == ('kikoo@hotmail.fr', 'le rest, naïg')

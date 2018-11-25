@@ -140,7 +140,7 @@ def get_msg_content(msgs, target_content_type):
         return get_msg_content([msg.get_payload() for msg in msgs if msg.get_content_type() == 'multipart/alternative'][0], target_content_type)
     if any(msg.get_content_type() == target_content_type for msg in msgs):
         return html.unescape(decode_ffs([msg.get_payload(decode=True) for msg in msgs if msg.get_content_type() == target_content_type][0]))
-    raise NotImplementedError('Unsupported Content-Types: {}'.format([msg.get_content_type() for msg in msgs]))
+    return None
 
 def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
     try:
@@ -192,16 +192,7 @@ def extract_user_email_and_name(address):
     match = HEADER_EMAIL_USER_ADDRESS_RE.match(address)
     if match:
         user_name_label, user_email = match.group(2, 3)
-        user_name, charset = decode_header(user_name_label)[0]
-        if charset:
-            try:
-                user_name = user_name.decode(charset)
-            except UnicodeDecodeError:
-                if charset.lower().replace('-', '') != 'utf8':
-                    raise
-                # decoding as UTF8 failed, attempting another well-known charset
-                user_name = user_name.decode('latin1')
-        return user_email.lower(), concatenate_repeated_spaces(user_name)
+        return user_email.lower(), concatenate_repeated_spaces(decode_email_user_label(user_name_label))
     match = HEADER_EMAIL_ML_USER_ADDRESS_RE.match(address)
     if match:
         user_name = match.group(1).lower()
@@ -212,6 +203,18 @@ def extract_user_email_and_name(address):
         return user_email, user_email
     print('Could not parse email address in From/To/Cc field: {}'.format(address), file=sys.stderr)  # warn
     return '', address
+
+def decode_email_user_label(user_name_label):
+    user_name = ''
+    for fragment, charset in decode_header(user_name_label):
+        try:
+            user_name += fragment.decode(charset or 'ascii') if isinstance(fragment, bytes) else fragment
+        except UnicodeDecodeError:
+            if charset.lower().replace('-', '') != 'utf8':
+                raise
+            # decoding as UTF8 failed, attempting another well-known charset
+            user_name += fragment.decode('latin1')
+    return user_name
 
 def extract_all_links(rawdata, emails, ignored_links_pattern):
     links_per_url = {}
