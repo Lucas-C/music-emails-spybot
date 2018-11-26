@@ -242,30 +242,33 @@ def decode_email_user_label(user_name_label):
 def extract_all_links(rawdata, emails, args):
     links_per_url = {}
     for msg_id, rawdatum in rawdata.items():
-        if rawdatum['text/html']:
-            extract_links(rawdatum, emails[msg_id], links_per_url, args)
+        email_src = list(emails[msg_id]['src'].keys())[0]
+        if args.only_from_emails and not re.search(args.only_from_emails, email_src):
+            print('- Ignoring email from {}'.format(email_src))
+            continue
+        if not rawdatum['text/html']:
+            print('- Ignoring email that has no available text/html content')
+            continue
+        extract_links(rawdatum, emails[msg_id], links_per_url, args)
     return [link for link in links_per_url.values() if link]
 
 def extract_links(rawdatum, email_msg, links_per_url, args):
-    if args.only_from_emails and not re.search(args.only_from_emails, list(email_msg['src'].keys())[0]):
-        print('- Ignoring email from {}'.format(email_msg['src']))
-        return
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
         text = text.strip()
         if not text:
+            print('- Ignoring link with empty text: {}'.format(url))
             continue
-        if url in links_per_url:
-            similar_link = links_per_url[url]
-            if not similar_link or similar_link['email']['timestamp'] < email_msg['timestamp']:
-                continue
+        if links_per_url.get(url) and links_per_url.get(url)['email']['timestamp'] > email_msg['timestamp']:
+            print('- Ignoring older link with similar URL: {} ({})'.format(text, url))
+            continue
         ignore_link = False
         if args.only_links_pattern:
             ignore_link = not re.search(args.only_links_pattern, url)
         elif args.ignored_links_pattern:
             ignore_link = re.search(args.ignored_links_pattern, url)
         if ignore_link:
-            print('- Ignoring link {} ({})'.format(text, url))
+            print('- Ignoring link matching --only/--ignored pattern: {} ({})'.format(text, url))
             links_per_url[url] = False
             continue
         if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
@@ -283,14 +286,21 @@ def extract_quote(text, url, plain_text_content):
     plain_text_content = re.sub(r'<(?!' + re.escape(url) + r')[^>]+>', '', plain_text_content)
     plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
     plain_text_content = re.sub(r'(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
-    if url in text:   # 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
-        regex = re.escape(url)
-    else:
-        regex = re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>'
-    match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
+    match = None
+    perform_search = lambda regex: (re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL), regex)
+    # First, we look for the bare URL if the link text contains it
+    # We use 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
+    if url in text:
+        match, regex = perform_search(re.escape(url))
     if not match:
-        regex = re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text))
-        match = re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL)
+        # Second, we look for Confluence wiki-style links: [ name | URL ]
+        match, regex = perform_search(r'\[\s*' + re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*|\s*' + re.escape(url) + r'\s*\]')
+    if not match:
+        # Third, we look for a surrounding sentence containing the link URL, in the form of: text <URL>
+        match, regex = perform_search(re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>')
+    if not match:
+        # Fourth, we look for a surrounding sentence containing the link text
+        match, regex = perform_search(re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)))
     quote = match.group().strip()
     if quote[0] in '.!?':
         quote = quote[1:]

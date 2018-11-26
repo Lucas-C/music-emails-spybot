@@ -4,7 +4,7 @@ from quopri import decodestring as email_decode  # quoted-printable encoding
 from music_emails_spybot import extract_links, extract_src_dst, extract_user_email_and_name
 
 
-ARGS_NO_PATTERNS = Namespace(ignored_links_pattern=None, only_links_pattern=None, only_from_emails=None)
+ARGS_NO_PATTERNS = Namespace(ignored_links_pattern=None, only_links_pattern=None)
 
 
 def test_tags_extraction():
@@ -66,6 +66,16 @@ SprGmHTy4">https://www.youtube.com/watch?v=3Do6SprGmHTy4</a></div>''').decode(),
 4''').decode(),
     }, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
     assert len(links_per_url) == 1
+
+
+def test_quote_extraction_with_wiki_style_links():
+    # Seen on a Gmail/Outlook exchange
+    links_per_url = {}
+    extract_links(rawdatum={
+        'text/plain': '''Si jamais tu ne connais pas encore, je te propose un peu de Alt-J : \r\n- [ Alt-J - Taro | https://www.youtube.com/watch?v=S3fTw_D3l10 ]''',
+        'text/html': '''Si jamais tu ne connais pas encore, je te propose un peu de Alt-J :<br>- <a href="https://www.youtube.com/watch?v=S3fTw_D3l10" target="_blank">Alt-J - Taro</a><br>''',
+    }, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
+    assert links_per_url['https://www.youtube.com/watch?v=S3fTw_D3l10']['quote'] == 'Si jamais tu ne connais pas encore, je te propose un peu de Alt-J : - <a href="https://www.youtube.com/watch?v=S3fTw_D3l10">Alt-J - Taro</a>'
 
 
 def test_extract_user_email_and_name():
