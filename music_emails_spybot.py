@@ -55,6 +55,7 @@ def parse_args(argv):
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=False)
+    parser.add_argument('--email-src', required=False)
     parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
@@ -104,6 +105,11 @@ def imap_get_new_msgs(args, already_fetched_ids):
         if args.email_subject:
             print('Now searching for messages in {} matching subject "{}"'.format(args.imap_mailbox, args.email_subject))
             matching_msgids = imap_search(imap, 'SUBJECT', args.email_subject)
+            print(len(matching_msgids), 'matching messages found')
+            msgids.update(set(matching_msgids) - set(already_fetched_ids))
+        if args.email_src:
+            print('Now searching for messages in {} width src "{}"'.format(args.imap_mailbox, args.email_src))
+            matching_msgids = imap_search(imap, 'FROM', args.email_src)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - set(already_fetched_ids))
         if args.email_dest:
