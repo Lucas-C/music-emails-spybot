@@ -57,7 +57,7 @@ def parse_args(argv):
     parser.add_argument('--email-subject', required=False)
     parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true')
-    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$', help=' ')
+    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$|\.img$', help=' ')
     parser.add_argument('--exclude-mailto', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
@@ -181,9 +181,9 @@ def extract_src_dst(rawdatum):
     src_user_email, src_user_name = extract_user_email_and_name(rawdatum['From'])
     dests = []
     if rawdatum.get('To'):
-        dests += [dest.strip() for dest in comma_splitter(html.unescape(rawdatum['To']))]
+        dests.extend(comma_splitter(html.unescape(rawdatum['To'])))
     if rawdatum.get('Cc'):
-        dests += [dest.strip() for dest in comma_splitter(html.unescape(rawdatum['Cc']))]
+        dests.extend(comma_splitter(html.unescape(rawdatum['Cc'])))
     return {'src': {src_user_email: {'name': src_user_name}},  # only one item in there
             'dests': {email: {'name': name} for email, name in (extract_user_email_and_name(dest) for dest in dests)}}
 
