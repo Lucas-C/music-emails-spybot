@@ -17,9 +17,9 @@ from jinja2 import Environment, FileSystemLoader
 THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 HEADER_EMAIL_SPLITTER_RE = re.compile(', ?\r?\n?\t?')
-HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?(cc:\s*)?([^"]+)"?\s+<(.+)>', re.DOTALL)
+HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?\\?"?(cc:\s*)?([^"]+)"?\\?"?\s+<(.+)>', re.DOTALL)
 HEADER_EMAIL_ML_USER_ADDRESS_RE = re.compile(r'"(.+)" \(.+\)')
-HEADER_EMAIL_ADDRESS_RE = re.compile(r'[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}')
+HEADER_EMAIL_ADDRESS_RE = re.compile(r'<?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})>?')
 CONTENT_LINK_TAGS_RE = re.compile(r'<a .*?href="?(http[^> "]*)"?[^>]*?>([^<]*?)</a>', re.DOTALL)
 CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
 
@@ -180,7 +180,11 @@ def format_date(date):
 
 def extract_src_dst(rawdatum):
     src_user_email, src_user_name = extract_user_email_and_name(rawdatum['From'])
-    dests = HEADER_EMAIL_SPLITTER_RE.split(rawdatum['To']) + (HEADER_EMAIL_SPLITTER_RE.split(rawdatum['Cc']) if rawdatum['Cc'] else [])
+    dests = []
+    if rawdatum['To']:
+        dests += HEADER_EMAIL_SPLITTER_RE.split(rawdatum['To'])
+    if rawdatum['Cc']:
+        dests += HEADER_EMAIL_SPLITTER_RE.split(rawdatum['Cc'])
     return {'src': {src_user_email: {'name': src_user_name}},  # only one item in there
             'dests': {email: {'name': name} for email, name in (extract_user_email_and_name(dest) for dest in dests)}}
 
@@ -199,7 +203,7 @@ def extract_user_email_and_name(address):
         return user_name, user_name  # returning user_name as user_email in order for `fix_usernames` to be usable
     match = HEADER_EMAIL_ADDRESS_RE.match(address)
     if match:
-        user_email = match.group().lower()
+        user_email = match.group(1).lower()
         return user_email, user_email
     print('Could not parse email address in From/To/Cc field: {}'.format(address), file=sys.stderr)  # warn
     return '', address
@@ -219,7 +223,8 @@ def decode_email_user_label(user_name_label):
 def extract_all_links(rawdata, emails, ignored_links_pattern):
     links_per_url = {}
     for msg_id, rawdatum in rawdata.items():
-        extract_links(rawdatum, emails[msg_id], links_per_url, ignored_links_pattern)
+        if rawdatum['text/html']:
+            extract_links(rawdatum, emails[msg_id], links_per_url, ignored_links_pattern)
     return [link for link in links_per_url.values() if link]
 
 def extract_links(rawdatum, email_msg, links_per_url, ignored_links_pattern):
