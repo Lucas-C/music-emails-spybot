@@ -42,7 +42,7 @@ def main(argv=None):
     archive['links'] = [link for email_msg in emails.values()
                              for link in email_msg['links']]
     archive['youtube_stats'] = compute_youtube_stats(archive['links'], args.youtube_api_key) if args.youtube_api_key else {}
-    archive['email_stats'] = compute_email_stats(emails)
+    archive['email_stats'] = compute_email_stats(emails) if args.render_email_stats else {}
     archive['mailto_href_base64'] = None
     if not args.exclude_mailto:
         dest = ';'.join(user_email for user_email, user in users.items() if archive['email_stats']['users'][user['name']]['emails_sent'])
@@ -64,6 +64,7 @@ def parse_args(argv):
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
     parser.add_argument('--youtube-api-key', help=' ')
+    parser.add_argument('--no-email-stats', dest='render_email_stats', defaul=True, action='store_false', help=' ')
     parser.add_argument('project_name')
     args = parser.parse_args(argv)
     if not args.email_subject and not args.email_dest:

@@ -54,7 +54,7 @@
       <h1>{{ project_name }}</h1>
         <a href="#">
           <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg"
-               style="display: block; max-width: 100%; margin: 0 auto" alt="Comfy mouse sleeping">
+               style="display: block; max-width: 100%; margin: 0 auto" alt="">
         </a>
         {% if mailto_href_base64 %}
         <p style="text-align: center">
@@ -77,6 +77,7 @@
           <tbody>
           </tbody>
         </table>
+        {% if email_stats %}
         <h3>Stats</h3>
         <h4>Contributeurs</h4>
         <ul>
@@ -85,6 +86,7 @@
           <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
           {% endfor %}
         </ul>
+        {% endif %}
         {% if youtube_stats|length %}
         <h4>Classification Youtube des musiques</h4>
         <ul>
