@@ -34,7 +34,7 @@ def main(argv=None):
         msgs = imap_get_new_msgs(args, already_fetched_ids)
         archive['rawdata'].update(dedupe_and_index_by_hash(extract_rawdata(msgs)))
         save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
-    emails = extract_emails(archive['rawdata'], args.ignored_links_pattern)
+    emails = extract_emails(archive['rawdata'], args)
     add_page_titles(archive['page_titles_cache'], emails)
     save_archive_to_file(args.project_name, archive)
     users = aggregate_users(emails)
@@ -58,6 +58,7 @@ def parse_args(argv):
     parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true')
     parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$|\.img$', help=' ')
+    parser.add_argument('--only-links-pattern', help=' ')
     parser.add_argument('--exclude-mailto', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
@@ -160,7 +161,7 @@ def dedupe_and_index_by_hash(rawdata):
             print('- duplicates msgs found:', rawdata_by_hash[hash_id]['msg_ids'])
     return rawdata_by_hash
 
-def extract_emails(rawdata, ignored_links_pattern):
+def extract_emails(rawdata, args):
     print('Now extracting meaningful info from raw data')
     emails = {}
     for msg_id, rawdatum in rawdata.items():
@@ -168,7 +169,7 @@ def extract_emails(rawdata, ignored_links_pattern):
         email_msg.update(format_date(rawdatum['Date']))
         email_msg.update(extract_src_dst(rawdatum))
         emails[msg_id] = email_msg
-    links = extract_all_links(rawdata, emails, ignored_links_pattern)
+    links = extract_all_links(rawdata, emails, args)
     for link in links:
         link['email']['links'].append(link)
     return emails
@@ -230,14 +231,14 @@ def decode_email_user_label(user_name_label):
             user_name += fragment.decode('latin1')
     return user_name
 
-def extract_all_links(rawdata, emails, ignored_links_pattern):
+def extract_all_links(rawdata, emails, args):
     links_per_url = {}
     for msg_id, rawdatum in rawdata.items():
         if rawdatum['text/html']:
-            extract_links(rawdatum, emails[msg_id], links_per_url, ignored_links_pattern)
+            extract_links(rawdatum, emails[msg_id], links_per_url, args)
     return [link for link in links_per_url.values() if link]
 
-def extract_links(rawdatum, email_msg, links_per_url, ignored_links_pattern):
+def extract_links(rawdatum, email_msg, links_per_url, args):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
         text = text.strip()
@@ -247,7 +248,12 @@ def extract_links(rawdatum, email_msg, links_per_url, ignored_links_pattern):
             similar_link = links_per_url[url]
             if not similar_link or similar_link['email']['timestamp'] < email_msg['timestamp']:
                 continue
-        if ignored_links_pattern and re.search(ignored_links_pattern, url):
+        ignore_link = False
+        if args.only_links_pattern:
+            ignore_link = not re.search(args.only_links_pattern, url)
+        elif args.ignored_links_pattern:
+            ignore_link = re.search(args.ignored_links_pattern, url)
+        if ignore_link:
             print('- Ignoring link {} ({})'.format(text, url))
             links_per_url[url] = False
             continue

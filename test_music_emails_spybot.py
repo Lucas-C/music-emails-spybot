@@ -1,6 +1,10 @@
+from argparse import Namespace
 from quopri import decodestring as email_decode  # quoted-printable encoding
 
 from music_emails_spybot import extract_links, extract_src_dst, extract_user_email_and_name
+
+
+ARGS_NO_PATTERNS = Namespace(ignored_links_pattern=None, only_links_pattern=None)
 
 
 def test_tags_extraction():
@@ -10,7 +14,7 @@ def test_tags_extraction():
     }
 
     links_per_url = {}
-    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
 
     assert links_per_url['https://www.youtube.com/watch?v=uJ_1HMAGb4k']['quote'] == 'Allez zou, un petit morceau de <a href="#pop">#pop</a> qui rend <a href="#happy">#happy</a> : <a href="https://www.youtube.com/watch?v=uJ_1HMAGb4k">https://www.youtube.com/watch?v=uJ_1HMAGb4k</a>'
 
@@ -22,7 +26,7 @@ def test_multiple_links_with_same_quote():
     }
 
     links_per_url = {}
-    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
 
     assert len(links_per_url) == 5  # 4 Youtube links + 1 jpg
     assert all(link['quote'].count('<a href=') == 1 for link in links_per_url.values())
@@ -35,7 +39,7 @@ def test_workaround_typo():
     }
 
     links_per_url = {}
-    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
 
     assert links_per_url['https://www.youtube.com/watch?v=Qt-of-5EwhU']['quote'] == '<a href="https://www.youtube.com/watch?v=Qt-of-5EwhU">http://https://www.youtube.com/watch?v=Qt-of-5EwhU</a>'
 
@@ -47,7 +51,7 @@ def test_gmail_styled_hrefs_extraction():
     }
 
     links_per_url = {}
-    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
+    extract_links(rawdatum, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
 
     assert len(links_per_url) == 3
 
@@ -60,7 +64,7 @@ ue/m=C3=A9lancolique :=C2=A0<a href=3D"https://www.youtube.com/watch?v=3Do6=
 SprGmHTy4">https://www.youtube.com/watch?v=3Do6SprGmHTy4</a></div>''').decode(),
         'text/plain': email_decode('''Hypnotique/m=C3=A9lancolique : https://www.youtube.com/watch?v=3Do6SprGmHTy=
 4''').decode(),
-    }, email_msg=None, links_per_url=links_per_url, ignored_links_pattern=None)
+    }, email_msg=None, links_per_url=links_per_url, args=ARGS_NO_PATTERNS)
     assert len(links_per_url) == 1
 
 
