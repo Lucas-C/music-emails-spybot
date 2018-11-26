@@ -241,7 +241,7 @@ def extract_all_links(rawdata, emails, args):
     return [link for link in links_per_url.values() if link]
 
 def extract_links(rawdatum, email_msg, links_per_url, args):
-    if args.only_from_emails and not re.search(args.only_from_emails, email_msg['src']):
+    if args.only_from_emails and not re.search(args.only_from_emails, list(email_msg['src'].keys())[0]):
         print('- Ignoring email from {}'.format(email_msg['src']))
         return
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
