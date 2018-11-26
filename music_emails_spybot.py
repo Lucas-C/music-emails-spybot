@@ -44,7 +44,7 @@ def main(argv=None):
     archive['youtube_stats'] = compute_youtube_stats(archive['links'], args.youtube_api_key) if args.youtube_api_key else {}
     archive['email_stats'] = compute_email_stats(emails) if args.render_email_stats else {}
     archive['mailto_href_base64'] = None
-    if not args.exclude_mailto:
+    if archive['email_stats'] and not args.no_mailto:
         dest = ';'.join(user_email for user_email, user in users.items() if archive['email_stats']['users'][user['name']]['emails_sent'])
         archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + (args.email_subject or args.project_name)).encode()).decode()
     generates_html_report(archive, args.project_name)
@@ -56,15 +56,16 @@ def parse_args(argv):
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=False)
     parser.add_argument('--email-dest', required=False)
-    parser.add_argument('--rebuild-from-cache-only', action='store_true')
-    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$|\.img$', help=' ')
-    parser.add_argument('--only-links-pattern', help=' ')
-    parser.add_argument('--exclude-mailto', action='store_true', help='So that no email appears in the HTML page')
+    parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
-    parser.add_argument('--youtube-api-key', help=' ')
-    parser.add_argument('--no-email-stats', dest='render_email_stats', defaul=True, action='store_false', help=' ')
+    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$|\.img$', help=' ')
+    parser.add_argument('--only-links-pattern', help=' ')
+    parser.add_argument('--only-from-emails', help=' ')
+    parser.add_argument('--youtube-api-key', help='If set, includes at the bottom some stats on Youtube songs classification')
+    parser.add_argument('--no-email-stats', dest='render_email_stats', default=True, action='store_false', help=' ')
+    parser.add_argument('--no-mailto', action='store_true', help='So that no email appears in the HTML page')
     parser.add_argument('project_name')
     args = parser.parse_args(argv)
     if not args.email_subject and not args.email_dest:
@@ -240,6 +241,9 @@ def extract_all_links(rawdata, emails, args):
     return [link for link in links_per_url.values() if link]
 
 def extract_links(rawdatum, email_msg, links_per_url, args):
+    if args.only_from_emails and not re.search(args.only_from_emails, email_msg['src']):
+        print('- Ignoring email from {}'.format(email_msg['src']))
+        return
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
         text = text.strip()

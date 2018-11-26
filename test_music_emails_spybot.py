@@ -4,7 +4,7 @@ from quopri import decodestring as email_decode  # quoted-printable encoding
 from music_emails_spybot import extract_links, extract_src_dst, extract_user_email_and_name
 
 
-ARGS_NO_PATTERNS = Namespace(ignored_links_pattern=None, only_links_pattern=None)
+ARGS_NO_PATTERNS = Namespace(ignored_links_pattern=None, only_links_pattern=None, only_from_emails=None)
 
 
 def test_tags_extraction():
