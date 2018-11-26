@@ -1,6 +1,6 @@
 from quopri import decodestring as email_decode  # quoted-printable encoding
 
-from music_emails_spybot import extract_links, extract_user_email_and_name
+from music_emails_spybot import extract_links, extract_src_dst, extract_user_email_and_name
 
 
 def test_tags_extraction():
@@ -72,3 +72,17 @@ def test_extract_user_email_and_name():
     assert extract_user_email_and_name('bob@anderson.org') == ('bob@anderson.org', 'bob@anderson.org')
     assert extract_user_email_and_name('<bob@anderson.org>') == ('bob@anderson.org', 'bob@anderson.org')
     assert extract_user_email_and_name('le =?utf-8?q?rest=2c_na=c3=afg?= <kikoo@hotmail.fr>') == ('kikoo@hotmail.fr', 'le rest, naïg')
+
+def test_extract_src_dst():
+    rawdatum = {
+        'From': 'a@b.com',
+        'To': '"ANDERSON, Bob" <bob.anderson@gmail.com>, \r\n\t"ANDERSON, Bobette" <bobette.anderson@gmail.com>'
+    }
+    expected = {
+        'src': {'a@b.com': {'name': 'a@b.com'}},
+        'dests': {
+            'bob.anderson@gmail.com': {'name': 'anderson, bob'},
+            'bobette.anderson@gmail.com': {'name': 'anderson, bobette'},
+        }
+    }
+    assert extract_src_dst(rawdatum) == expected

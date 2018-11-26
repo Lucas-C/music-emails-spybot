@@ -16,7 +16,6 @@ from jinja2 import Environment, FileSystemLoader
 
 THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-HEADER_EMAIL_SPLITTER_RE = re.compile(', ?\r?\n?\t?')
 HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?\\?"?(cc:\s*)?([^"]+)"?\\?"?\s+<(.+)>', re.DOTALL)
 HEADER_EMAIL_ML_USER_ADDRESS_RE = re.compile(r'"(.+)" \(.+\)')
 HEADER_EMAIL_ADDRESS_RE = re.compile(r'<?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})>?')
@@ -181,12 +180,23 @@ def format_date(date):
 def extract_src_dst(rawdatum):
     src_user_email, src_user_name = extract_user_email_and_name(rawdatum['From'])
     dests = []
-    if rawdatum['To']:
-        dests += HEADER_EMAIL_SPLITTER_RE.split(rawdatum['To'])
-    if rawdatum['Cc']:
-        dests += HEADER_EMAIL_SPLITTER_RE.split(rawdatum['Cc'])
+    if rawdatum.get('To'):
+        dests += [dest.strip() for dest in comma_splitter(html.unescape(rawdatum['To']))]
+    if rawdatum.get('Cc'):
+        dests += [dest.strip() for dest in comma_splitter(html.unescape(rawdatum['Cc']))]
     return {'src': {src_user_email: {'name': src_user_name}},  # only one item in there
             'dests': {email: {'name': name} for email, name in (extract_user_email_and_name(dest) for dest in dests)}}
+
+def comma_splitter(email_dests_string):
+    start = 0
+    in_quotes = False
+    for i, c in enumerate(email_dests_string):
+        if c == '"':
+            in_quotes = not in_quotes
+        elif c == ',' and not in_quotes:
+            yield email_dests_string[start:i].strip()
+            start = i + 1
+    yield email_dests_string[start:].strip()
 
 def extract_user_email_and_name(address):
     'Return (user_email, user_name) : the 2nd value only is assured to be non-empty'
