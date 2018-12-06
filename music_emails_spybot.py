@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-#  jq '.rawdata|with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_bot_memory.json
-#  jq 'del(.page_titles_cache)' < ComfySpy_bot_memory.json | sponge ComfySpy_bot_memory.json
-#  jq '.rawdata|with_entries(select(.value.msg_ids[]|contains("18205")))' < ComfySpy_bot_memory.json
+# Useful commands:
+#  jq 'with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_rawdata.json
+#  jq 'del(.ce359021b4e0341745472c29441271bb.links[1])' ComfySpy_emails.json | sponge ComfySpy_emails.json
+#  jq 'with_entries(select(.value.msg_ids[]|contains("18205")))' < ComfySpy_rawdata.json
 
 import argparse, email, hashlib, html, json, re, requests, os, sys
 from base64 import b64encode
@@ -11,7 +12,6 @@ from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from imaplib import IMAP4_SSL
 from urllib.parse import urlparse
-from time import perf_counter  # used by timeit module
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -57,7 +57,7 @@ def parse_args(argv):
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
-    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|\.gif$|\.jpe?g$|\.img$', help=' ')
+    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|framalistes.org|\.gif$|\.jpe?g$|\.img$', help=' ')
     parser.add_argument('--only-links-pattern', help=' ')
     parser.add_argument('--only-from-emails', help=' ')
     parser.add_argument('--youtube-api-key', help='If set, includes at the bottom some stats on Youtube songs classification')
@@ -75,13 +75,12 @@ class ArgparseHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefa
 def retrieve_emails(args):
     print('Now loading emails from on-disk cache file')
     emails = load_json_file(args.project_name, 'emails')
-    if args.rebuild_from_cache_only:
-        return emails
-    new_rawdata = retrieve_rawdata(args)
-    new_emails = extract_emails(new_rawdata, args)
-    emails.update(new_emails)
-    dedupe_links(emails)
-    save_json_file(emails, args.project_name, 'emails')
+    if not args.rebuild_from_cache_only:
+        new_rawdata = retrieve_rawdata(args)
+        new_emails = extract_emails(new_rawdata, args)
+        emails.update(new_emails)
+        dedupe_links(emails)
+        save_json_file(emails, args.project_name, 'emails')
     # We cross-reference parent emails in links AFTER writing the cache to avoid circular references
     for email_msg in emails.values():
         for link in email_msg['links']:
@@ -188,10 +187,7 @@ def extract_emails(new_rawdata, args):
         if not rawdatum['text/html']:
             print('- Ignoring email that has no available text/html content')
             continue
-        start = perf_counter()
         email_msg['links'] = list(extract_links(rawdatum, args))
-        end = perf_counter()
-        print('Processed email content of {}chars in {:3f}s'.format(len(rawdatum['text/html']), end - start))
         print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i + 1, len(new_rawdata)))
     return new_emails
 
@@ -253,7 +249,13 @@ def decode_email_user_label(user_name_label):
     return user_name
 
 def extract_links(rawdatum, args):
-    for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
+    # With old msgs in the thread being quoted at the bottom of emails,
+    # some are > 250 000 characters.
+    # Based on experimental testing, no email is >5000 characters,
+    # so we truncate content at this length
+    html_content = rawdatum['text/html'][:5000]
+    plain_content = rawdatum['text/plain'][:5000]
+    for match in re.findall(CONTENT_LINK_TAGS_RE, html_content):
         url, text = match
         text = text.strip()
         if not text:
@@ -270,7 +272,7 @@ def extract_links(rawdatum, args):
         if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
             url = re.search('http(?!.+http).+', url).group()
         text = concatenate_repeated_spaces(text)
-        quote, regex = extract_quote(text, url, rawdatum['text/plain'])
+        quote, regex = extract_quote(text, url, plain_content)
         tags = list(extract_tags(quote))
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
         for tag in tags:
@@ -284,6 +286,7 @@ def extract_quote(text, url, plain_text_content):
     plain_text_content = re.sub(r'(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
     perform_search = lambda regex: (re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL), regex)
     # First, we look for Confluence wiki-style links: [ text | URL ]
+    # (note: based on minimal benchmarking, this is the most expensive of the regexs used)
     match, regex = perform_search(r'\[\s*' + re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*|\s*' + re.escape(url) + r'\s*\]')
     if not match and url in text:
         # Second, we look for the bare URL if the link text contains it
@@ -307,8 +310,9 @@ def extract_tags(quote):
 def dedupe_links(emails):
     processed_urls = set()
     for email_msg in sorted(emails.values(), key=lambda msg: msg['timestamp']):
-        email_msg['links'] = [link for link in email_msg['links'] if link['url'] not in processed_urls]
-        processed_urls.update(link['url'] for link in email_msg['links'])
+        links_per_url = {link['url']: link for link in email_msg['links']}  # to dedupe duplicate links in a single email
+        email_msg['links'] = [link for url, link in links_per_url.items() if url not in processed_urls]
+        processed_urls.update(links_per_url.keys())
 
 def add_page_titles(project_name, emails):
     print('Now getting titles of all linked pages')
