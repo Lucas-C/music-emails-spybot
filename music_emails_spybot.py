@@ -28,17 +28,11 @@ ESCAPED_REPEATED_SPACE_RE = re.compile(r'\\\s+')
 
 def main(argv=None):
     args = parse_args(argv)
-    archive = load_archive_from_file(args.project_name)
-    if not args.rebuild_from_cache_only:
-        already_fetched_ids = sum([rawdatum['msg_ids'] for rawdatum in archive['rawdata'].values()], [])
-        msgs = imap_get_new_msgs(args, already_fetched_ids)
-        archive['rawdata'].update(dedupe_and_index_by_hash(extract_rawdata(msgs)))
-        save_archive_to_file(args.project_name, archive) # This first dump to disk ensure we won't have to fetch the server even if the following fails
-    emails = extract_emails(archive['rawdata'], args)
-    add_page_titles(archive['page_titles_cache'], emails)
-    save_archive_to_file(args.project_name, archive)
+    emails = retrieve_emails(args)
+    add_page_titles(args.project_name, emails)
     users = aggregate_users(emails)
     fix_usernames(users, args.project_name)
+    archive = {}
     archive['links'] = [link for email_msg in emails.values()
                              for link in email_msg['links']]
     archive['youtube_stats'] = compute_youtube_stats(archive['links'], args.youtube_api_key) if args.youtube_api_key else {}
@@ -58,6 +52,7 @@ def parse_args(argv):
     parser.add_argument('--email-src', required=False)
     parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
+    parser.add_argument('--rebuild-emails-cache', action='store_true', help='Re-parse all IMAP raw data')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
@@ -76,23 +71,25 @@ def parse_args(argv):
 class ArgparseHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
     pass
 
-def load_archive_from_file(project_name):
-    print('Now loading archive from disk file')
-    db_file_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '_bot_memory.json')
-    try:
-        with open(db_file_path, 'r') as archive_file:
-            archive = json.load(archive_file)
-    except (FileNotFoundError, ValueError):
-        archive = {}
-    archive['rawdata'] = archive.get('rawdata', {})
-    archive['page_titles_cache'] = archive.get('page_titles_cache', {})
-    return archive
+def retrieve_emails(args):
+    print('Now loading emails from on-disk cache file')
+    emails = load_json_file(args.project_name, 'emails')
+    if args.rebuild_from_cache_only:
+        return emails
+    new_rawdata = retrieve_rawdata(args)
+    emails = extract_emails(emails, new_rawdata, args)
+    save_json_file(emails, args.project_name, 'emails')
+    return emails
 
-def save_archive_to_file(project_name, archive):
-    print('Now saving archive to disk file')
-    db_file_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '_bot_memory.json')
-    with open(db_file_path, 'w') as archive_file:
-        json.dump(archive, archive_file)
+def retrieve_rawdata(args):
+    print('Now loading rawdata from on-disk cache file')
+    rawdata = load_json_file(args.project_name, 'rawdata')
+    already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
+    new_msgs = imap_get_new_msgs(args, already_fetched_ids)
+    new_rawdata = dedupe_and_index_by_hash(extract_rawdata(new_msgs))
+    rawdata.update(new_rawdata)
+    save_json_file(rawdata, args.project_name, 'rawdata')
+    return rawdata if args.rebuild_emails_cache else new_rawdata
 
 def imap_get_new_msgs(args, already_fetched_ids):
     imap = IMAP4_SSL(args.imap_server_name, args.imap_server_port)
@@ -106,17 +103,17 @@ def imap_get_new_msgs(args, already_fetched_ids):
             print('Now searching for messages in {} matching subject "{}"'.format(args.imap_mailbox, args.email_subject))
             matching_msgids = imap_search(imap, 'SUBJECT', args.email_subject)
             print(len(matching_msgids), 'matching messages found')
-            msgids.update(set(matching_msgids) - set(already_fetched_ids))
+            msgids.update(set(matching_msgids) - already_fetched_ids)
         if args.email_src:
             print('Now searching for messages in {} width src "{}"'.format(args.imap_mailbox, args.email_src))
             matching_msgids = imap_search(imap, 'FROM', args.email_src)
             print(len(matching_msgids), 'matching messages found')
-            msgids.update(set(matching_msgids) - set(already_fetched_ids))
+            msgids.update(set(matching_msgids) - already_fetched_ids)
         if args.email_dest:
             print('Now searching for messages in {} width dest "{}"'.format(args.imap_mailbox, args.email_dest))
             matching_msgids = imap_search(imap, 'TO', args.email_dest)
             print(len(matching_msgids), 'matching messages found')
-            msgids.update(set(matching_msgids) - set(already_fetched_ids))
+            msgids.update(set(matching_msgids) - already_fetched_ids)
         print('Now fetching {} new messages'.format(len(msgids)))
         msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids}
         assert all(msg[0] == 'OK' for msg in msgs.values())
@@ -169,15 +166,14 @@ def dedupe_and_index_by_hash(rawdata):
             print('- duplicates msgs found:', rawdata_by_hash[hash_id]['msg_ids'])
     return rawdata_by_hash
 
-def extract_emails(rawdata, args):
+def extract_emails(emails, new_rawdata, args):
     print('Now extracting meaningful info from raw data')
-    emails = {}
-    for msg_id, rawdatum in rawdata.items():
+    for msg_id, rawdatum in new_rawdata.items():
         email_msg = {'id': msg_id, 'links': []}
         email_msg.update(format_date(rawdatum['Date']))
         email_msg.update(extract_src_dst(rawdatum))
         emails[msg_id] = email_msg
-    for link in extract_all_links(rawdata, emails, args):
+    for link in extract_all_links(new_rawdata, emails, args):
         link['email']['links'].append(link)
     return emails
 
@@ -240,7 +236,7 @@ def decode_email_user_label(user_name_label):
 
 def extract_all_links(rawdata, emails, args):
     timestamp_per_url = {}
-    for msg_id, rawdatum in rawdata.items():
+    for i, (msg_id, rawdatum) in enumerate(rawdata.items()):
         email_src = list(emails[msg_id]['src'].keys())[0]
         if args.only_from_emails and not re.search(args.only_from_emails, email_src):
             print('- Ignoring email from {}'.format(email_src))
@@ -250,6 +246,7 @@ def extract_all_links(rawdata, emails, args):
             continue
         for link in extract_links(rawdatum, emails[msg_id], timestamp_per_url, args):
             yield link
+        print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i, len(rawdata)))
 
 def extract_links(rawdatum, email_msg, timestamp_per_url, args):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
@@ -308,13 +305,15 @@ def extract_tags(quote):
     for match in re.findall(CATEGORY_HASHTAGS_RE, quote):
         yield match[1]
 
-def add_page_titles(page_titles_cache, emails):
+def add_page_titles(project_name, emails):
     print('Now getting titles of all linked pages')
+    page_titles_cache = load_json_file(project_name, 'page_titles_cache')
     for email_msg in emails.values():
         for link in email_msg['links']:
             if link['url'] not in page_titles_cache:
                 page_titles_cache[link['url']] = get_page_title(link['url'])
             link['page_title'] = page_titles_cache[link['url']]
+    save_json_file(page_titles_cache, project_name, 'page_titles_cache')
 
 def get_page_title(url):
     try:
@@ -344,15 +343,26 @@ def aggregate_users(emails):
     return users
 
 def fix_usernames(users, project_name):
-    usernames_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '_imap_usernames.json')
-    if not os.path.exists(usernames_filepath):
+    correct_usernames = load_json_file(project_name, 'imap_usernames')
+    if not correct_usernames:
         return
     print('Now fixing the users names')
-    with open(usernames_filepath, 'r') as usernames_file:
-        correct_usernames = json.load(usernames_file)
     for user_email, user in users.items():
         if user_email in correct_usernames:
             user['name'] = correct_usernames[user_email]
+
+def load_json_file(project_name, role):
+    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, '{}_{}.json'.format(project_name, role))
+    try:
+        with open(json_filepath, 'r') as json_file:
+            return json.load(json_file)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+def save_json_file(data, project_name, role):
+    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, '{}_{}.json'.format(project_name, role))
+    with open(json_filepath, 'w') as json_file:
+        json.dump(data, json_file)
 
 def compute_youtube_stats(links, youtube_api_key):
     print('Now computing statistics on Youtube songs topics')
