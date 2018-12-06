@@ -13,7 +13,7 @@ def test_tags_extraction():
         'text/plain': 'Merci :)\r\nBwarf, j\'ai pas trop envie de paginer franchement.\r\n\r\nAllez zou, un petit morceau de #pop qui rend #happy :\r\nhttps://www.youtube.com/watch?v=uJ_1HMAGb4k\r\n\r\n',
     }
 
-    links = list(extract_links(rawdatum, email_msg={'timestamp': 0}, timestamp_per_url={}, args=ARGS_NO_PATTERNS))
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
     links_per_url = {link['url']: link for link in links}
 
     assert links_per_url['https://www.youtube.com/watch?v=uJ_1HMAGb4k']['quote'] == 'Allez zou, un petit morceau de <a href="#pop">#pop</a> qui rend <a href="#happy">#happy</a> : <a href="https://www.youtube.com/watch?v=uJ_1HMAGb4k">https://www.youtube.com/watch?v=uJ_1HMAGb4k</a>'
@@ -25,7 +25,7 @@ def test_multiple_links_with_same_quote():
         'text/plain': 'Je ne vais pas trop m’étendre étant donné que je n\'est bien exploré que\r\nleur dernier album pour le moment (Cooking with pagans\r\n<https://i.ytimg.com/vi/4-FTRHflHFs/maxresdefault.jpg>), mais c\'est du Hard\r\nRock <https://www.youtube.com/watch?v=y9ytbURTs40>, Heavy Metal\r\n<https://www.youtube.com/watch?v=tRx8AAht9jY>, Progressive Metal\r\n<https://www.youtube.com/watch?v=30bQJuKbN3E> bien barré (mention spéciale\r\npour "Anal bleach <https://www.youtube.com/watch?v=qoSpzbE31KA>" et toute\r\nla poésie qui se dégage du titre).',
     }
 
-    links = list(extract_links(rawdatum, email_msg={'timestamp': 0}, timestamp_per_url={}, args=ARGS_NO_PATTERNS))
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
 
     assert len(links) == 5  # 4 Youtube links + 1 jpg
     assert all(link['quote'].count('<a href=') == 1 for link in links)
@@ -37,7 +37,7 @@ def test_workaround_typo():
         'text/plain': '\r\nhttp://https://www.youtube.com/watch?v=Qt-of-5EwhU\r\n\r\n',
     }
 
-    links = list(extract_links(rawdatum, email_msg={'timestamp': 0}, timestamp_per_url={}, args=ARGS_NO_PATTERNS))
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
     links_per_url = {link['url']: link for link in links}
 
     assert links_per_url['https://www.youtube.com/watch?v=Qt-of-5EwhU']['quote'] == '<a href="https://www.youtube.com/watch?v=Qt-of-5EwhU">http://https://www.youtube.com/watch?v=Qt-of-5EwhU</a>'
@@ -49,7 +49,7 @@ def test_gmail_styled_hrefs_extraction():
         'text/plain': "Petit partage à mon tour, pour vous faire découvrir Cabadzi !\r\nhttps://www.youtube.com/watch?v=YnEBdT75RUQ\r\nhttps://www.youtube.com/watch?v=42-Xq5VYrLE\r\nhttps://www.youtube.com/watch?v=IHpR0sP5xXo\r\nça ressemble un peu à FAUVE je trouve\r\npas sûr que ça vous plaise, mais j'adhère bien ;)\r\n\r",
     }
 
-    links = list(extract_links(rawdatum, email_msg={'timestamp': 0}, timestamp_per_url={}, args=ARGS_NO_PATTERNS))
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
 
     assert len(links) == 3
 
@@ -61,7 +61,7 @@ ue/m=C3=A9lancolique :=C2=A0<a href=3D"https://www.youtube.com/watch?v=3Do6=
 SprGmHTy4">https://www.youtube.com/watch?v=3Do6SprGmHTy4</a></div>''').decode(),
         'text/plain': email_decode('''Hypnotique/m=C3=A9lancolique : https://www.youtube.com/watch?v=3Do6SprGmHTy=
 4''').decode(),
-    }, email_msg={'timestamp': 0}, timestamp_per_url={}, args=ARGS_NO_PATTERNS))
+    }, args=ARGS_NO_PATTERNS))
     assert len(links) == 1
 
 
@@ -70,7 +70,7 @@ def test_quote_extraction_with_wiki_style_links():
     links = list(extract_links(rawdatum={
         'text/plain': '''Si jamais tu ne connais pas encore, je te propose un peu de Alt-J : \r\n- [ Alt-J - Taro | https://www.youtube.com/watch?v=S3fTw_D3l10 ]''',
         'text/html': '''Si jamais tu ne connais pas encore, je te propose un peu de Alt-J :<br>- <a href="https://www.youtube.com/watch?v=S3fTw_D3l10" target="_blank">Alt-J - Taro</a><br>''',
-    }, email_msg={'timestamp': 0}, timestamp_per_url={}, args=ARGS_NO_PATTERNS))
+    }, args=ARGS_NO_PATTERNS))
     links_per_url = {link['url']: link for link in links}
     assert links_per_url['https://www.youtube.com/watch?v=S3fTw_D3l10']['quote'] == 'Si jamais tu ne connais pas encore, je te propose un peu de Alt-J : - <a href="https://www.youtube.com/watch?v=S3fTw_D3l10">Alt-J - Taro</a>'
 

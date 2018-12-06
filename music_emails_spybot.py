@@ -11,6 +11,7 @@ from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from imaplib import IMAP4_SSL
 from urllib.parse import urlparse
+from time import perf_counter  # used by timeit module
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -30,7 +31,7 @@ def main(argv=None):
     args = parse_args(argv)
     emails = retrieve_emails(args)
     add_page_titles(args.project_name, emails)
-    users = aggregate_users(emails)
+    users = aggregate_users_in_emails(emails)
     fix_usernames(users, args.project_name)
     archive = {}
     archive['links'] = [link for email_msg in emails.values()
@@ -77,8 +78,14 @@ def retrieve_emails(args):
     if args.rebuild_from_cache_only:
         return emails
     new_rawdata = retrieve_rawdata(args)
-    emails = extract_emails(emails, new_rawdata, args)
+    new_emails = extract_emails(new_rawdata, args)
+    emails.update(new_emails)
+    dedupe_links(emails)
     save_json_file(emails, args.project_name, 'emails')
+    # We cross-reference parent emails in links AFTER writing the cache to avoid circular references
+    for email_msg in emails.values():
+        for link in email_msg['links']:
+            link['email'] = email_msg
     return emails
 
 def retrieve_rawdata(args):
@@ -166,16 +173,27 @@ def dedupe_and_index_by_hash(rawdata):
             print('- duplicates msgs found:', rawdata_by_hash[hash_id]['msg_ids'])
     return rawdata_by_hash
 
-def extract_emails(emails, new_rawdata, args):
+def extract_emails(new_rawdata, args):
     print('Now extracting meaningful info from raw data')
-    for msg_id, rawdatum in new_rawdata.items():
+    new_emails = {}
+    for i, (msg_id, rawdatum) in enumerate(new_rawdata.items()):
         email_msg = {'id': msg_id, 'links': []}
         email_msg.update(format_date(rawdatum['Date']))
         email_msg.update(extract_src_dst(rawdatum))
-        emails[msg_id] = email_msg
-    for link in extract_all_links(new_rawdata, emails, args):
-        link['email']['links'].append(link)
-    return emails
+        new_emails[msg_id] = email_msg
+        email_src = list(email_msg['src'].keys())[0]
+        if args.only_from_emails and not re.search(args.only_from_emails, email_src):
+            print('- Ignoring email from {}'.format(email_src))
+            continue
+        if not rawdatum['text/html']:
+            print('- Ignoring email that has no available text/html content')
+            continue
+        start = perf_counter()
+        email_msg['links'] = list(extract_links(rawdatum, args))
+        end = perf_counter()
+        print('Processed email content of {}chars in {:3f}s'.format(len(rawdatum['text/html']), end - start))
+        print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i + 1, len(new_rawdata)))
+    return new_emails
 
 def format_date(date):
     dt = parsedate_to_datetime(date)
@@ -234,29 +252,12 @@ def decode_email_user_label(user_name_label):
             user_name += fragment.decode('latin1')
     return user_name
 
-def extract_all_links(rawdata, emails, args):
-    timestamp_per_url = {}
-    for i, (msg_id, rawdatum) in enumerate(rawdata.items()):
-        email_src = list(emails[msg_id]['src'].keys())[0]
-        if args.only_from_emails and not re.search(args.only_from_emails, email_src):
-            print('- Ignoring email from {}'.format(email_src))
-            continue
-        if not rawdatum['text/html']:
-            print('- Ignoring email that has no available text/html content')
-            continue
-        for link in extract_links(rawdatum, emails[msg_id], timestamp_per_url, args):
-            yield link
-        print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i, len(rawdata)))
-
-def extract_links(rawdatum, email_msg, timestamp_per_url, args):
+def extract_links(rawdatum, args):
     for match in re.findall(CONTENT_LINK_TAGS_RE, rawdatum['text/html']):
         url, text = match
         text = text.strip()
         if not text:
             print('- Ignoring link with empty text: {}'.format(url))
-            continue
-        if timestamp_per_url.get(url) and timestamp_per_url[url] > email_msg['timestamp']:
-            print('- Ignoring older link with similar URL: {} ({})'.format(text, url))
             continue
         ignore_link = False
         if args.only_links_pattern:
@@ -265,18 +266,16 @@ def extract_links(rawdatum, email_msg, timestamp_per_url, args):
             ignore_link = re.search(args.ignored_links_pattern, url)
         if ignore_link:
             print('- Ignoring link matching --only/--ignored pattern: {} ({})'.format(text, url))
-            timestamp_per_url[url] = False
             continue
         if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
             url = re.search('http(?!.+http).+', url).group()
         text = concatenate_repeated_spaces(text)
         quote, regex = extract_quote(text, url, rawdatum['text/plain'])
-        tags = set(extract_tags(quote))
+        tags = list(extract_tags(quote))
         quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
         for tag in tags:
             quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
-        timestamp_per_url[url] = email_msg['timestamp']
-        yield {'url': url, 'quote': quote, 'text': text, 'tags': tags, 'email': email_msg}
+        yield {'url': url, 'quote': quote, 'text': text, 'tags': tags}
 
 def extract_quote(text, url, plain_text_content):
     plain_text_content = re.sub(HISTORY_LINE_PREFIX_RE, '', plain_text_content)
@@ -305,6 +304,12 @@ def extract_tags(quote):
     for match in re.findall(CATEGORY_HASHTAGS_RE, quote):
         yield match[1]
 
+def dedupe_links(emails):
+    processed_urls = set()
+    for email_msg in sorted(emails.values(), key=lambda msg: msg['timestamp']):
+        email_msg['links'] = [link for link in email_msg['links'] if link['url'] not in processed_urls]
+        processed_urls.update(link['url'] for link in email_msg['links'])
+
 def add_page_titles(project_name, emails):
     print('Now getting titles of all linked pages')
     page_titles_cache = load_json_file(project_name, 'page_titles_cache')
@@ -326,7 +331,7 @@ def get_page_title(url):
         return 'ERROR: NO TITLE'
     return match.group(1)
 
-def aggregate_users(emails):
+def aggregate_users_in_emails(emails):
     print('Now aggregating users based on their emails')
     users = {}
     def merge_user(user_email, user):
