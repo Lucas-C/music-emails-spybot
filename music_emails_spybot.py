@@ -54,6 +54,7 @@ def parse_args(argv):
     parser.add_argument('--email-src', required=False)
     parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
+    parser.add_argument('--rebuild-rawdata-cache', action='store_true', help='Re-fetch & parse all emails from IMAP server')
     parser.add_argument('--rebuild-emails-cache', action='store_true', help='Re-parse all IMAP raw data')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
@@ -90,8 +91,12 @@ def retrieve_emails(args):
 
 def retrieve_rawdata(args):
     print('Now loading rawdata from on-disk cache file')
-    rawdata = load_json_file(args.project_name, 'rawdata')
-    already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
+    if args.rebuild_rawdata_cache:
+        rawdata = {}
+        already_fetched_ids = frozenset()
+    else:
+        rawdata = load_json_file(args.project_name, 'rawdata')
+        already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
     new_msgs = imap_get_new_msgs(args, already_fetched_ids)
     new_rawdata = dedupe_and_index_by_hash(extract_rawdata(new_msgs))
     rawdata.update(new_rawdata)
@@ -138,7 +143,7 @@ def extract_rawdata(msgs):
     email_msgs = {id: email.message_from_string(decode_ffs(msg[1][0][1])) for id, msg in msgs.items()}
     return {id: {
         'Date': msg.get('Date'),
-        'From': msg.get('From'),
+        'From': msg.get('Reply-To') or msg.get('From'),
         'To': msg.get('To'),
         'Cc': msg.get('Cc'),
         'text/html': get_msg_content(msg.get_payload(), 'text/html'),
