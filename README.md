@@ -56,7 +56,7 @@ Executing a single test:
 ## Ideas for new features
 
 - make links extraction smarter by ignoring bottom of emails containing previous messages
-- use a profiler with `--rebuild-from-cache-only` to find bottlenecks
+_cf._ https://github.com/Lucas-C/music-emails-spybot/issues/1 - Current workaround is to only read first 5000 chars
 - split `main` into tasks, that save their state into the JSON memory file when they finish, so that it'd be possible to exec only 1 task (fetch emails / extract quotes / generate HTML...)
 - for each task, show its duration & memory usage
 - publish on Pypi

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # Useful commands:
+#  jq 'with_entries(select(.value.date_str|contains("2019-04-03")))' < ComfySpy_emails.json
 #  jq 'with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_rawdata.json
 #  jq 'del(.ce359021b4e0341745472c29441271bb.links[1])' ComfySpy_emails.json | sponge ComfySpy_emails.json
 #  jq 'with_entries(select(.value.msg_ids[]|contains("18205")))' < ComfySpy_rawdata.json
@@ -218,13 +219,13 @@ def comma_splitter(email_dests_string):
 
 def extract_user_email_and_name(address):
     'Return (user_email, user_name) : the 2nd value only is assured to be non-empty'
-    address = address.strip().lower()
+    address = address.strip()
     if not address:
         raise ValueError('Empty From/To/Cc email address: {}'.format(address))
     match = HEADER_EMAIL_USER_ADDRESS_RE.match(address)
     if match:
         user_name_label, user_email = match.group(2, 3)
-        return user_email.lower(), concatenate_repeated_spaces(decode_email_user_label(user_name_label))
+        return user_email.lower(), concatenate_repeated_spaces(decode_email_user_label(user_name_label)).lower()
     match = HEADER_EMAIL_ML_USER_ADDRESS_RE.match(address)
     if match:
         user_name = match.group(1).lower()
@@ -234,7 +235,7 @@ def extract_user_email_and_name(address):
         user_email = match.group(1).lower()
         return user_email, user_email
     print('Could not parse email address in From/To/Cc field: {}'.format(address), file=sys.stderr)  # warn
-    return '', address
+    return '', address.lower()
 
 def decode_email_user_label(user_name_label):
     user_name = ''

@@ -82,7 +82,8 @@ def test_extract_user_email_and_name():
     assert extract_user_email_and_name('"bob anderson" (via comfy mailing list)') == ('bob anderson', 'bob anderson')
     assert extract_user_email_and_name('bob@anderson.org') == ('bob@anderson.org', 'bob@anderson.org')
     assert extract_user_email_and_name('<bob@anderson.org>') == ('bob@anderson.org', 'bob@anderson.org')
-    assert extract_user_email_and_name('le =?utf-8?q?rest=2c_na=c3=afg?= <kikoo@hotmail.fr>') == ('kikoo@hotmail.fr', 'le rest, naïg')
+    assert extract_user_email_and_name('le =?utf-8?q?rest=2c_na=c3=afg?= <bob@anderson.org>') == ('bob@anderson.org', 'le rest, naïg')
+    assert extract_user_email_and_name('=?UTF-8?B?S8OpdmluIEJyw6ltb25k?= (via comfy Mailing List) <bob@anderson.org>') == ('bob@anderson.org', 'kévin brémond (via comfy mailing list)')
 
 def test_extract_src_dst():
     rawdatum = {
