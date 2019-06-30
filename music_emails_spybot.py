@@ -12,7 +12,7 @@ from collections import Counter, defaultdict
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from imaplib import IMAP4_SSL
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse, parse_qs
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -21,12 +21,14 @@ THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 HEADER_EMAIL_USER_ADDRESS_RE = re.compile(r'"?\\?"?(cc:\s*)?([^"]+)"?\\?"?\s+<(.+)>', re.DOTALL)
 HEADER_EMAIL_ML_USER_ADDRESS_RE = re.compile(r'"(.+)" \(.+\)')
 HEADER_EMAIL_ADDRESS_RE = re.compile(r'<?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})>?')
-CONTENT_LINK_TAGS_RE = re.compile(r'<a .*?href="?(http[^> "]*)"?[^>]*?>([^<]*?)</a>', re.DOTALL)
+HTML_CONTENT_LINK_TAGS_RE = re.compile(r'<a .*?href="?(http[^,> "]+)"?[^>]*?>([^<]*?)</a>', re.DOTALL)
+PLAIN_CONTENT_LINK_TAGS_RE = re.compile(r'(?:^|\s)(http[^,> "]+?)(?:\s|$)')
 CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
 
 HISTORY_LINE_PREFIX_RE = re.compile('\r\n>+')
 REPEATED_SPACE_RE = re.compile(r'\s+')
 ESCAPED_REPEATED_SPACE_RE = re.compile(r'\\\s+')
+SENTENCE_SPLITTER_RE = re.compile(r'\.\s|!\s|\?\s|\n')
 
 def main(argv=None):
     args = parse_args(argv)
@@ -59,8 +61,7 @@ def parse_args(argv):
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
-    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|framalistes.org|\.gif$|\.jpe?g$|\.img$', help=' ')
-    parser.add_argument('--only-links-pattern', help=' ')
+    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|fbcdn.net|framalistes.org|media.spacial.com|www.y/|www.yout/|\.gif$|\.jpe?g$|\.img$', help=' ')
     parser.add_argument('--only-from-emails', help=' ')
     parser.add_argument('--youtube-api-key', help='If set, includes at the bottom some stats on Youtube songs classification')
     parser.add_argument('--no-email-stats', dest='render_email_stats', default=True, action='store_false', help=' ')
@@ -76,7 +77,7 @@ class ArgparseHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefa
 
 def retrieve_emails(args):
     print('Now loading emails from on-disk cache file')
-    emails = load_json_file(args.project_name, 'emails')
+    emails = {} if args.rebuild_emails_cache else load_json_file(args.project_name, 'emails')
     if not args.rebuild_from_cache_only:
         new_rawdata = retrieve_rawdata(args)
         new_emails = extract_emails(new_rawdata, args)
@@ -98,7 +99,7 @@ def retrieve_rawdata(args):
         rawdata = load_json_file(args.project_name, 'rawdata')
         already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
     new_msgs = imap_get_new_msgs(args, already_fetched_ids)
-    new_rawdata = dedupe_and_index_by_hash(extract_rawdata(new_msgs))
+    new_rawdata = dedupe_and_index_by_hash(rawdata, extract_rawdata(new_msgs))
     rawdata.update(new_rawdata)
     save_json_file(rawdata, args.project_name, 'rawdata')
     return rawdata if args.rebuild_emails_cache else new_rawdata
@@ -165,18 +166,23 @@ def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
     except UnicodeError:
         return bytestring.decode('latin1')
 
-def dedupe_and_index_by_hash(rawdata):
-    print('Now deduping rawdata (IMAP msgs often change ID, at least on Gmail)')
-    rawdata_by_hash = {}
-    for msg_id, rawdatum in rawdata.items():
+def dedupe_and_index_by_hash(rawdata, new_rawdata):
+    print('Now deduping new rawdata (IMAP msgs often change ID, at least on Gmail)')
+    new_rawdata_by_hash = {}
+    for msg_id, rawdatum in new_rawdata.items():
         hash_id = hashlib.md5('|'.join(v or '' for k, v in rawdatum.items() if k != 'msg_ids').encode('utf8')).hexdigest()
-        if hash_id not in rawdata_by_hash:
-            rawdata_by_hash[hash_id] = rawdatum
-            rawdata_by_hash[hash_id]['msg_ids'] = [msg_id]
+        if hash_id in rawdata or hash_id in new_rawdata_by_hash:
+            if hash_id not in new_rawdata_by_hash:
+                new_rawdata_by_hash[hash_id] = rawdata[hash_id]
+                found_where = 'in cached rawdata'
+            else:
+                found_where = 'among newly fetch'
+            new_rawdata_by_hash[hash_id]['msg_ids'].append(msg_id)
+            print('- duplicate msgs found {}:'.format(found_where), rawdata[hash_id]['msg_ids'])
         else:
-            rawdata_by_hash[hash_id]['msg_ids'].append(msg_id)
-            print('- duplicates msgs found:', rawdata_by_hash[hash_id]['msg_ids'])
-    return rawdata_by_hash
+            new_rawdata_by_hash[hash_id] = rawdatum
+            new_rawdata_by_hash[hash_id]['msg_ids'] = [msg_id]
+    return new_rawdata_by_hash
 
 def extract_emails(new_rawdata, args):
     print('Now extracting meaningful info from raw data')
@@ -193,7 +199,7 @@ def extract_emails(new_rawdata, args):
         if not rawdatum['text/html']:
             print('- Ignoring email that has no available text/html content')
             continue
-        email_msg['links'] = list(extract_links(rawdatum, args))
+        email_msg['links'] = extract_links(rawdatum, args)
         print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i + 1, len(new_rawdata)))
     return new_emails
 
@@ -259,33 +265,75 @@ def extract_links(rawdatum, args):
     # some are > 250 000 characters.
     # Based on experimental testing, no email is >5000 characters,
     # so we truncate content at this length
-    html_content = rawdatum['text/html'][:5000]
     plain_content = rawdatum['text/plain'][:5000]
-    for match in re.findall(CONTENT_LINK_TAGS_RE, html_content):
+    html_content = rawdatum['text/html'][:5000].replace('<wbr>', '')
+    # Note: ici la troncature est rarement faite au même niveau dans les 2 versions
+    # (la version HTML pouvant être 3x + longue que la version TEXT pour un même contenu)
+    # ce qui peut entrainer des soucis de dé-duplication de liens malformés n'apparaissant que dans la version TEXT.
+    # On pourrait donc essayer d'être + intelligents pour faire matcher ces 2 variables *_content
+    links_per_url = {}
+    for match in re.findall(HTML_CONTENT_LINK_TAGS_RE, html_content):
         url, text = match
         text = text.strip()
         if not text:
             print('- Ignoring link with empty text: {}'.format(url))
             continue
-        ignore_link = False
-        if args.only_links_pattern:
-            ignore_link = not re.search(args.only_links_pattern, url)
-        elif args.ignored_links_pattern:
-            ignore_link = re.search(args.ignored_links_pattern, url)
-        if ignore_link:
-            print('- Ignoring link matching --only/--ignored pattern: {} ({})'.format(text, url))
+        link = extract_quote_and_tags(args, url, plain_content, text)
+        if link:
+            links_per_url[url] = link
+    for url in re.findall(PLAIN_CONTENT_LINK_TAGS_RE, plain_content):
+        url = url.strip()
+        if any(url.startswith(already_extracted_url) or already_extracted_url.startswith(url) for already_extracted_url in links_per_url):
             continue
-        if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
-            url = re.search('http(?!.+http).+', url).group()
-        text = concatenate_repeated_spaces(text)
-        quote, regex = extract_quote(text, url, plain_content)
-        tags = list(extract_tags(quote))
-        quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
-        for tag in tags:
-            quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
-        yield {'url': url, 'quote': quote, 'text': text, 'tags': tags}
+        link = extract_quote_and_tags(args, url, plain_content)
+        if link:
+            links_per_url[url] = link
+    return links_per_url.values()
 
-def extract_quote(text, url, plain_text_content):
+def extract_quote_and_tags(args, url, plain_content, text=''):
+    url = clean_up_url(url)
+    if not url:
+        return None
+    if args.ignored_links_pattern and re.search(args.ignored_links_pattern, url):
+        print('- Ignoring link matching --ignored pattern: {} ({})'.format(text, url))
+        return None
+    if text:
+        quote, regex = extract_quote_with_text(concatenate_repeated_spaces(text), url, plain_content)
+        if quote:
+            quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
+        else:
+            quote = '<a href="{}">{}</a>'.format(url, text)
+    else:
+        quote = extract_quote(url, plain_content)
+        if quote:
+            quote = '<a href="{}">{}</a>'.format(url, quote)
+        else:
+            quote = '<a href="{0}">{0}</a>'.format(url)
+    tags = list(extract_tags(quote))
+    for tag in tags:
+        quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
+    quote = re.sub('  +', ' ', quote.replace('\n', '').replace('\r', '').replace('\t', ''))
+    text = re.sub('  +', ' ', text.replace('\n', '').replace('\r', '').replace('\t', ''))
+    return {'url': url, 'quote': quote, 'text': text, 'tags': tags}
+
+def clean_up_url(url):
+    if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
+        url = re.search('http(?!.+http).+', url).group()
+    parsed_url = urlparse(url)
+    if parsed_url.hostname == 'www.youtube.com' and parsed_url.path != '/watch':
+        return None  # invalid Youtube URL
+    query_params = parse_qs(parsed_url.query)
+    if 'v' in query_params and len(query_params['v'][0]) != 11:
+        return None  # invalid Youtube URL
+    if 'index' in query_params:
+        del query_params['index']  # Youtube
+    if 'list' in query_params:
+        del query_params['list']  # Youtube
+    if 't' in query_params:
+        del query_params['t']  # Youtube
+    return parsed_url._replace(query=urlencode(query_params, doseq=True)).geturl()
+
+def extract_quote_with_text(text, url, plain_text_content):
     plain_text_content = re.sub(HISTORY_LINE_PREFIX_RE, '', plain_text_content)
     plain_text_content = re.sub(r'<(?!' + re.escape(url) + r')[^>]+>', '', plain_text_content)
     plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
@@ -304,10 +352,25 @@ def extract_quote(text, url, plain_text_content):
     if not match:
         # Fourth, we look for a surrounding sentence containing the link text
         match, regex = perform_search(re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)))
+    if not match:
+        return None, None
     quote = match.group().strip()
-    if quote[0] in '.!?':
+    if quote and quote[0] in '.!?':
         quote = quote[1:]
-    return concatenate_repeated_spaces(quote.strip()), regex
+    return concatenate_repeated_spaces(quote), regex
+
+def extract_quote(url, plain_text_content):
+    plain_text_content = re.sub(HISTORY_LINE_PREFIX_RE, '', plain_text_content)
+    sentences = [s.strip() for s in re.split(SENTENCE_SPLITTER_RE, plain_text_content)]
+    try:
+        i = next(i for i, s in enumerate(sentences) if url in s)
+    except StopIteration:
+        return None
+    for i in range(i, -1, -1):
+        quote = re.sub(PLAIN_CONTENT_LINK_TAGS_RE, '', sentences[i]).strip()
+        if quote:
+            return quote
+    return None
 
 def extract_tags(quote):
     for match in re.findall(CATEGORY_HASHTAGS_RE, quote):
