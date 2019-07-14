@@ -53,6 +53,7 @@ def parse_args(argv):
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject', required=False)
+    parser.add_argument('--ignored-email-subjects', help=' ')
     parser.add_argument('--email-src', required=False)
     parser.add_argument('--email-dest', required=False)
     parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
@@ -99,7 +100,7 @@ def retrieve_rawdata(args):
         rawdata = load_json_file(args.project_name, 'rawdata')
         already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
     new_msgs = imap_get_new_msgs(args, already_fetched_ids)
-    new_rawdata = dedupe_and_index_by_hash(rawdata, extract_rawdata(new_msgs))
+    new_rawdata = dedupe_and_index_by_hash(rawdata, extract_rawdata(new_msgs, args.ignored_email_subjects))
     rawdata.update(new_rawdata)
     save_json_file(rawdata, args.project_name, 'rawdata')
     return rawdata if args.rebuild_emails_cache else new_rawdata
@@ -118,12 +119,12 @@ def imap_get_new_msgs(args, already_fetched_ids):
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
         if args.email_src:
-            print('Now searching for messages in {} width src "{}"'.format(args.imap_mailbox, args.email_src))
+            print('Now searching for messages in {} with src "{}"'.format(args.imap_mailbox, args.email_src))
             matching_msgids = imap_search(imap, 'FROM', args.email_src)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
         if args.email_dest:
-            print('Now searching for messages in {} width dest "{}"'.format(args.imap_mailbox, args.email_dest))
+            print('Now searching for messages in {} with dest "{}"'.format(args.imap_mailbox, args.email_dest))
             matching_msgids = imap_search(imap, 'TO', args.email_dest)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
@@ -139,7 +140,7 @@ def imap_search(imap, *args):
     assert return_code == 'OK' and len(msgids) == 1
     return msgids[0].decode('ascii').split(' ')
 
-def extract_rawdata(msgs):
+def extract_rawdata(msgs, ignored_email_subjects):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
     email_msgs = {id: email.message_from_string(decode_ffs(msg[1][0][1])) for id, msg in msgs.items()}
     return {id: {
@@ -147,9 +148,10 @@ def extract_rawdata(msgs):
         'From': msg.get('Reply-To') or msg.get('From'),
         'To': msg.get('To'),
         'Cc': msg.get('Cc'),
+        'Subject': msg.get('Subject'),
         'text/html': get_msg_content(msg.get_payload(), 'text/html'),
         'text/plain': get_msg_content(msg.get_payload(), 'text/plain'),
-    } for id, msg in email_msgs.items()}
+    } for id, msg in email_msgs.items() if not ignored_email_subjects or not re.search(ignored_email_subjects, msg.get('Subject'))}
 
 def get_msg_content(msgs, target_content_type):
     if isinstance(msgs, str):
