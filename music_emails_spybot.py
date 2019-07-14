@@ -198,9 +198,6 @@ def extract_emails(new_rawdata, args):
         if args.only_from_emails and not re.search(args.only_from_emails, email_src):
             print('- Ignoring email from {}'.format(email_src))
             continue
-        if not rawdatum['text/html']:
-            print('- Ignoring email that has no available text/html content')
-            continue
         email_msg['links'] = extract_links(rawdatum, args)
         print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i + 1, len(new_rawdata)))
     return new_emails
@@ -268,7 +265,7 @@ def extract_links(rawdatum, args):
     # Based on experimental testing, no email is >5000 characters,
     # so we truncate content at this length
     plain_content = rawdatum['text/plain'][:5000]
-    html_content = rawdatum['text/html'][:5000].replace('<wbr>', '')
+    html_content = (rawdatum.get('text/html') or '')[:5000].replace('<wbr>', '')
     # Note: ici la troncature est rarement faite au même niveau dans les 2 versions
     # (la version HTML pouvant être 3x + longue que la version TEXT pour un même contenu)
     # ce qui peut entrainer des soucis de dé-duplication de liens malformés n'apparaissant que dans la version TEXT.
