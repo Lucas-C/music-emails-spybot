@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# Doc:
+# - https://tools.ietf.org/html/rfc3501
+# - https://developers.google.com/gmail/imap/imap-extensions
+
 # Useful commands:
 #  jq 'with_entries(select(.value.date_str|contains("2019-04-03")))' < ComfySpy_emails.json
 #  jq 'with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_rawdata.json
@@ -42,7 +46,7 @@ def main(argv=None):
     archive['youtube_stats'] = compute_youtube_stats(archive['links'], args.youtube_api_key) if args.youtube_api_key else {}
     archive['email_stats'] = compute_email_stats(emails) if args.render_email_stats else {}
     archive['mailto_href_base64'] = None
-    if archive['email_stats'] and not args.no_mailto:
+    if archive['email_stats'] and args.include_mailto:
         dest = ';'.join(user_email for user_email, user in users.items() if archive['email_stats']['users'][user['name']]['emails_sent'])
         archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + (args.email_subject or args.project_name)).encode()).decode()
     generates_html_report(archive, args.project_name)
@@ -52,10 +56,12 @@ def parse_args(argv):
                                      formatter_class=ArgparseHelpFormatter)
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
-    parser.add_argument('--email-subject', required=False)
+    parser.add_argument('--email-subject')
     parser.add_argument('--ignored-email-subjects', help=' ')
-    parser.add_argument('--email-src', required=False)
-    parser.add_argument('--email-dest', required=False)
+    parser.add_argument('--email-src', help=' ')
+    parser.add_argument('--email-srcs', default=[], type=lambda srcs: srcs.split(','), help='Comma-separated list')
+    parser.add_argument('--email-dest', help=' ')
+    parser.add_argument('--email-dests', default=[], type=lambda dests: dests.split(','), help='Comma-separated list')
     parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
     parser.add_argument('--rebuild-rawdata-cache', action='store_true', help='Re-fetch & parse all emails from IMAP server')
     parser.add_argument('--rebuild-emails-cache', action='store_true', help='Re-parse all IMAP raw data')
@@ -63,14 +69,24 @@ def parse_args(argv):
     parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
     parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
     parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|fbcdn.net|framalistes.org|media.spacial.com|www.y/|www.yout/|\.gif$|\.jpe?g$|\.img$', help=' ')
+    parser.add_argument('--only-links-pattern', help=' ')
     parser.add_argument('--only-from-emails', help=' ')
     parser.add_argument('--youtube-api-key', help='If set, includes at the bottom some stats on Youtube songs classification')
-    parser.add_argument('--no-email-stats', dest='render_email_stats', default=True, action='store_false', help=' ')
-    parser.add_argument('--no-mailto', action='store_true', help='So that no email appears in the HTML page')
+    parser.add_argument('--no-email-stats', action='store_false', dest='render_email_stats', help=' ')
+    parser.add_argument('--no-mailto', action='store_false', dest='include_mailto', help='So that no email appears in the HTML page')
+    parser.add_argument('--no-fetch-gmail-labels', action='store_false', dest='fetch_gmail_labels', help='Fetch Gmail labels & exlude draft emails')
     parser.add_argument('project_name')
     args = parser.parse_args(argv)
-    if not args.email_subject and not args.email_dest:
-        parser.error('--email-subject or --email-dest required')
+    if not args.email_subject and not args.email_dest and not args.email_dests:
+        parser.error('--email-subject or --email-dest(s) required')
+    if args.email_src:
+        if args.email_srcs:
+            parser.error('Only one of --email-src and --email-srcs must be provided')
+        args.email_srcs = [args.email_src]
+    if args.email_dest:
+        if args.email_dests:
+            parser.error('Only one of --email-dest and --email-dests must be provided')
+        args.email_dests = [args.email_dest]
     return args
 
 class ArgparseHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
@@ -118,27 +134,33 @@ def imap_get_new_msgs(args, already_fetched_ids):
             matching_msgids = imap_search(imap, 'SUBJECT', args.email_subject)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
-        if args.email_src:
-            print('Now searching for messages in {} with src "{}"'.format(args.imap_mailbox, args.email_src))
-            matching_msgids = imap_search(imap, 'FROM', args.email_src)
+        for email_src in args.email_srcs:
+            print('Now searching for messages in {} with src "{}"'.format(args.imap_mailbox, email_src))
+            matching_msgids = imap_search(imap, 'FROM', email_src)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
-        if args.email_dest:
-            print('Now searching for messages in {} with dest "{}"'.format(args.imap_mailbox, args.email_dest))
-            matching_msgids = imap_search(imap, 'TO', args.email_dest)
+        for email_dest in args.email_dests:
+            print('Now searching for messages in {} with dest "{}"'.format(args.imap_mailbox, email_dest))
+            matching_msgids = imap_search(imap, 'TO', email_dest)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
         print('Now fetching {} new messages'.format(len(msgids)))
-        msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids}
+        msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids
+                if not (args.fetch_gmail_labels and gmail_is_draft(imap, id))}
         assert all(msg[0] == 'OK' for msg in msgs.values())
         return msgs
     finally:
         imap.logout()
 
 def imap_search(imap, *args):
-    return_code, msgids = imap.search(None, *args)
+    return_code, msgids = imap.search(None, *args)#, 'UNDRAFT')
     assert return_code == 'OK' and len(msgids) == 1
     return msgids[0].decode('ascii').split(' ')
+
+def gmail_is_draft(imap, msg_id):
+    return_code, labels = imap.fetch(msg_id.encode('ascii'), 'X-GM-LABELS')
+    assert return_code == 'OK' and len(labels) == 1
+    return labels[0].endswith(br'(X-GM-LABELS ("\\Draft"))')
 
 def extract_rawdata(msgs, ignored_email_subjects):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
@@ -295,6 +317,9 @@ def extract_quote_and_tags(args, url, plain_content, text=''):
         return None
     if args.ignored_links_pattern and re.search(args.ignored_links_pattern, url):
         print('- Ignoring link matching --ignored pattern: {} ({})'.format(text, url))
+        return None
+    if args.only_links_pattern and not re.search(args.only_links_pattern, url):
+        print('- Ignoring link not matching --only pattern: {} ({})'.format(text, url))
         return None
     if text:
         quote, regex = extract_quote_with_text(concatenate_repeated_spaces(text), url, plain_content)
