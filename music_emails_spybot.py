@@ -31,7 +31,6 @@ CATEGORY_HASHTAGS_RE = re.compile(r'(^|\s)#([a-zA-Z][a-zA-Z0-9_]+)(\s|$)')
 
 HISTORY_LINE_PREFIX_RE = re.compile('\r\n>+')
 REPEATED_SPACE_RE = re.compile(r'\s+')
-ESCAPED_REPEATED_SPACE_RE = re.compile(r'\\\s+')
 SENTENCE_SPLITTER_RE = re.compile(r'\.\s|!\s|\?\s|\n')
 
 def main(argv=None):
@@ -363,19 +362,20 @@ def extract_quote_with_text(text, url, plain_text_content):
     plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
     plain_text_content = re.sub(r'(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
     perform_search = lambda regex: (re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL), regex)
+    escaped_text = re.escape(text)
     # First, we look for Confluence wiki-style links: [ text | URL ]
     # (note: based on minimal benchmarking, this is the most expensive of the regexs used)
-    match, regex = perform_search(r'\[\s*' + re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*|\s*' + re.escape(url) + r'\s*\]')
+    match, regex = perform_search(r'\[\s*' + escaped_text + r'\s*|\s*' + re.escape(url) + r'\s*\]')
     if not match and url in text:
         # Second, we look for the bare URL if the link text contains it
         # We use 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
         match, regex = perform_search(re.escape(url))
     if not match:
         # Third, we look for a surrounding sentence containing the link URL, in the form of: text <URL>
-        match, regex = perform_search(re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)) + r'\s*<' + re.escape(url) + '>')
+        match, regex = perform_search(escaped_text + r'\s*<' + re.escape(url) + '>')
     if not match:
         # Fourth, we look for a surrounding sentence containing the link text
-        match, regex = perform_search(re.sub(ESCAPED_REPEATED_SPACE_RE, r'\s+', re.escape(text)))
+        match, regex = perform_search(escaped_text)
     if not match:
         return None, None
     quote = match.group().strip()

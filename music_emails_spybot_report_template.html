@@ -13,11 +13,12 @@
       box-sizing: border-box;
     }
     body {
-      margin: 20px;
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       font-size: 14px;
       line-height: 1.42857143;
       color: #333;
+      margin: 0 auto;
+      max-width: 50rem;
     }
     h1 {
       font-size: 36px;
@@ -47,14 +48,24 @@
     tbody > tr:nth-of-type(odd) {
         background-color: #f9f9f9;
     }
+    img {
+        display: block;
+        max-width: 100%;
+        margin: 0 auto;
+    }
+    footer {
+        padding: 50px;
+        text-align: center;
+    }
+    .error {
+        background-color: #f2dede;
+    }
     </style>
   </head>
   <body>
-    <div style="margin: 0 auto; max-width: 800px">
       <h1>{{ project_name }}</h1>
         <a href="#">
-          <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg"
-               style="display: block; max-width: 100%; margin: 0 auto" alt="">
+          <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" alt="">
         </a>
         {% if mailto_href_base64 %}
         <p style="text-align: center">
@@ -95,8 +106,7 @@
           {% endfor %}
         </ul>
         {% endif %}
-    </div>
-    <footer style="padding: 50px; text-align: center">
+    <footer>
       Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
     </footer>
     <script>
@@ -104,7 +114,7 @@
         var links = [
           {% for link in links|sort(attribute='email.timestamp', reverse=True) %}
             {timestamp: {{ link.email.timestamp }}, tags: {{ link.tags|list }}, element: trFromString('\
-            <tr {{ 'style="background-color: #f2dede"' if link.page_title.startswith('ERROR:') }}>\
+            <tr {{ 'class="error"' if link.page_title.startswith('ERROR:') }}>\
               <!-- email.id: {{ link.email.id }} - email.timestamp: {{ link.email.timestamp }} -->\
               <td>{{ link.email.date_str }}</td>\
               <td>\

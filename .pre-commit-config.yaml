@@ -1,20 +1,18 @@
 repos:
 -   repo: git://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.1.6
+    rev: v1.1.7
     hooks:
     -   id: remove-crlf
     -   id: forbid-tabs
 -   repo: git://github.com/pre-commit/pre-commit-hooks
-    rev: v2.2.1
+    rev: v2.5.0
     hooks:
     -   id: check-merge-conflict
     -   id: check-yaml
     -   id: debug-statements
     -   id: trailing-whitespace
-        args:
-        - --no-markdown-linebreak-ext
 -   repo: git://github.com/pre-commit/mirrors-pylint
-    rev: v2.3.1
+    rev: v2.4.4
     hooks:
     -   id: pylint
         args:
