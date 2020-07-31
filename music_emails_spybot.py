@@ -163,16 +163,24 @@ def gmail_is_draft(imap, msg_id):
 
 def extract_rawdata(msgs, ignored_email_subjects):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
-    email_msgs = {id: email.message_from_string(decode_ffs(msg[1][0][1])) for id, msg in msgs.items()}
-    return {id: {
-        'Date': msg.get('Date'),
-        'From': msg.get('Reply-To') or msg.get('From'),
-        'To': msg.get('To'),
-        'Cc': msg.get('Cc'),
-        'Subject': msg.get('Subject'),
-        'text/html': get_msg_content(msg.get_payload(), 'text/html'),
-        'text/plain': get_msg_content(msg.get_payload(), 'text/plain'),
-    } for id, msg in email_msgs.items() if not ignored_email_subjects or not re.search(ignored_email_subjects, msg.get('Subject'))}
+    compiled_re = re.compile(ignored_email_subjects)
+    rawdata = {}
+    for id, msg in msgs.items():
+        msg = email.message_from_string(decode_ffs(msg[1][0][1]))
+        email_subject = msg.get('Subject')
+        if ignored_email_subjects and compiled_re.search(email_subject):
+            print('- Ignoring email with subject:', email_subject)
+            continue
+        rawdata[id] = {
+            'Date': msg.get('Date'),
+            'From': msg.get('Reply-To') or msg.get('From'),
+            'To': msg.get('To'),
+            'Cc': msg.get('Cc'),
+            'Subject': email_subject,
+            'text/html': get_msg_content(msg.get_payload(), 'text/html'),
+            'text/plain': get_msg_content(msg.get_payload(), 'text/plain'),
+        }
+    return rawdata
 
 def get_msg_content(msgs, target_content_type):
     if isinstance(msgs, str):
