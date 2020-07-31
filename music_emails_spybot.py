@@ -56,7 +56,7 @@ def parse_args(argv):
     parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
     parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject')
-    parser.add_argument('--ignored-email-subjects', help=' ')
+    parser.add_argument('--ignored-email-subjects', help='Regular expression')
     parser.add_argument('--email-src', help=' ')
     parser.add_argument('--email-srcs', default=[], type=lambda srcs: srcs.split(','), help='Comma-separated list')
     parser.add_argument('--email-dest', help=' ')
