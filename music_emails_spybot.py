@@ -163,15 +163,15 @@ def gmail_is_draft(imap, msg_id):
 
 def extract_rawdata(msgs, ignored_email_subjects):
     print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
-    compiled_re = re.compile(ignored_email_subjects)
+    compiled_re = re.compile(ignored_email_subjects or '.*')
     rawdata = {}
-    for id, msg in msgs.items():
+    for msg_id, msg in msgs.items():
         msg = email.message_from_string(decode_ffs(msg[1][0][1]))
         email_subject = msg.get('Subject')
         if ignored_email_subjects and compiled_re.search(email_subject):
             print('- Ignoring email with subject:', email_subject)
             continue
-        rawdata[id] = {
+        rawdata[msg_id] = {
             'Date': msg.get('Date'),
             'From': msg.get('Reply-To') or msg.get('From'),
             'To': msg.get('To'),
