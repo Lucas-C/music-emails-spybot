@@ -14,7 +14,7 @@ jobs:
     strategy:
       max-parallel: 5
       matrix:
-        python-version: [3.6, 3.7, 3.8, 3.9]
+        python-version: [3.6, 3.9]
     steps:
       - name: Checkout code 🛎
         uses: actions/checkout@v3
@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+      - name: Install dependencies ⚙️
         run: pip install -r requirements.txt -r dev-requirements.txt
-      - name: Execute all pre-commit hooks on all files
+      - name: Execute all pre-commit hooks on all files ☑
         run: pre-commit run --all-files
