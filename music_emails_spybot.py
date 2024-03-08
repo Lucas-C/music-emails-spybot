@@ -61,7 +61,7 @@ def parse_args(argv):
     parser.add_argument('--email-srcs', default=[], type=lambda srcs: srcs.split(','), help='Comma-separated list')
     parser.add_argument('--email-dest', help=' ')
     parser.add_argument('--email-dests', default=[], type=lambda dests: dests.split(','), help='Comma-separated list')
-    parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection')
+    parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection, base everything on the "emails" cache file')
     parser.add_argument('--rebuild-rawdata-cache', action='store_true', help='Re-fetch & parse all emails from IMAP server')
     parser.add_argument('--rebuild-emails-cache', action='store_true', help='Re-parse all IMAP raw data')
     parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
