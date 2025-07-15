@@ -129,21 +129,21 @@ def imap_get_new_msgs(args, already_fetched_ids):
         assert return_code == 'OK'
         msgids = set()
         if args.email_subject:
-            print('Now searching for messages in {} matching subject "{}"'.format(args.imap_mailbox, args.email_subject))
+            print(f'Now searching for messages in {args.imap_mailbox} matching subject "{args.email_subject}"')
             matching_msgids = imap_search(imap, 'SUBJECT', args.email_subject)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
         for email_src in args.email_srcs:
-            print('Now searching for messages in {} with src "{}"'.format(args.imap_mailbox, email_src))
+            print(f'Now searching for messages in {args.imap_mailbox} with src "{email_src}"')
             matching_msgids = imap_search(imap, 'FROM', email_src)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
         for email_dest in args.email_dests:
-            print('Now searching for messages in {} with dest "{}"'.format(args.imap_mailbox, email_dest))
+            print(f'Now searching for messages in {args.imap_mailbox} with dest "{email_dest}"')
             matching_msgids = imap_search(imap, 'TO', email_dest)
             print(len(matching_msgids), 'matching messages found')
             msgids.update(set(matching_msgids) - already_fetched_ids)
-        print('Now fetching {} new messages'.format(len(msgids)))
+        print(f'Now fetching {len(msgids)} new messages')
         msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids
                 if not (args.fetch_gmail_labels and gmail_is_draft(imap, id))}
         assert all(msg[0] == 'OK' for msg in msgs.values())
@@ -162,7 +162,7 @@ def gmail_is_draft(imap, msg_id):
     return labels[0].endswith(br'(X-GM-LABELS ("\\Draft"))')
 
 def extract_rawdata(msgs, ignored_email_subjects):
-    print('Now extracting raw data from {} fetched messages'.format(len(msgs)))
+    print(f'Now extracting raw data from {len(msgs)} fetched messages')
     compiled_re = re.compile(ignored_email_subjects or '.*')
     rawdata = {}
     for msg_id, msg in msgs.items():
@@ -209,7 +209,7 @@ def dedupe_and_index_by_hash(rawdata, new_rawdata):
             else:
                 found_where = 'among newly fetch'
             new_rawdata_by_hash[hash_id]['msg_ids'].append(msg_id)
-            print('- duplicate msgs found {}:'.format(found_where), rawdata[hash_id]['msg_ids'])
+            print(f'- duplicate msgs found {found_where}:', rawdata[hash_id]['msg_ids'])
         else:
             new_rawdata_by_hash[hash_id] = rawdatum
             new_rawdata_by_hash[hash_id]['msg_ids'] = [msg_id]
@@ -225,10 +225,10 @@ def extract_emails(new_rawdata, args):
         new_emails[msg_id] = email_msg
         email_src = list(email_msg['src'].keys())[0]
         if args.only_from_emails and not re.search(args.only_from_emails, email_src):
-            print('- Ignoring email from {}'.format(email_src))
+            print(f'- Ignoring email from {email_src}')
             continue
         email_msg['links'] = extract_links(rawdatum, args)
-        print('# LINKS EXTRACTION PROGRESS: {}/{} of all rawdatum done'.format(i + 1, len(new_rawdata)))
+        print(f'# LINKS EXTRACTION PROGRESS: {i + 1}/{len(new_rawdata)} of all rawdatum done')
     return new_emails
 
 def format_date(date):
@@ -260,7 +260,7 @@ def extract_user_email_and_name(address):
     'Return (user_email, user_name) : the 2nd value only is assured to be non-empty'
     address = address.strip()
     if not address:
-        raise ValueError('Empty From/To/Cc email address: {}'.format(address))
+        raise ValueError(f'Empty From/To/Cc email address: {address}')
     match = HEADER_EMAIL_USER_ADDRESS_RE.match(address)
     if match:
         user_name_label, user_email = match.group(2, 3)
@@ -273,7 +273,7 @@ def extract_user_email_and_name(address):
     if match:
         user_email = match.group(1).lower()
         return user_email, user_email
-    print('Could not parse email address in From/To/Cc field: {}'.format(address), file=sys.stderr)  # warn
+    print(f'Could not parse email address in From/To/Cc field: {address}', file=sys.stderr)  # warn
     return '', address.lower()
 
 def decode_email_user_label(user_name_label):
@@ -304,7 +304,7 @@ def extract_links(rawdatum, args):
         url, text = match
         text = text.strip()
         if not text:
-            print('- Ignoring link with empty text: {}'.format(url))
+            print(f'- Ignoring link with empty text: {url}')
             continue
         link = extract_quote_and_tags(args, url, plain_content, text)
         if link:
@@ -323,26 +323,26 @@ def extract_quote_and_tags(args, url, plain_content, text=''):
     if not url:
         return None
     if args.ignored_links_pattern and re.search(args.ignored_links_pattern, url):
-        print('- Ignoring link matching --ignored pattern: {} ({})'.format(text, url))
+        print(f'- Ignoring link matching --ignored pattern: {text} ({url})')
         return None
     if args.only_links_pattern and not re.search(args.only_links_pattern, url):
-        print('- Ignoring link not matching --only pattern: {} ({})'.format(text, url))
+        print(f'- Ignoring link not matching --only pattern: {text} ({url})')
         return None
     if text:
         quote, regex = extract_quote_with_text(concatenate_repeated_spaces(text), url, plain_content)
         if quote:
-            quote = re.sub(regex, '<a href="{}">{}</a>'.format(url, text), quote)
+            quote = re.sub(regex, f'<a href="{url}">{text}</a>', quote)
         else:
-            quote = '<a href="{}">{}</a>'.format(url, text)
+            quote = f'<a href="{url}">{text}</a>'
     else:
         quote = extract_quote(url, plain_content)
         if quote:
-            quote = '<a href="{}">{}</a>'.format(url, quote)
+            quote = f'<a href="{url}">{quote}</a>'
         else:
-            quote = '<a href="{0}">{0}</a>'.format(url)
+            quote = f'<a href="{url}">{url}</a>'
     tags = list(extract_tags(quote))
     for tag in tags:
-        quote = re.sub('#'+tag, '<a href="#{0}">#{0}</a>'.format(tag), quote)
+        quote = re.sub('#'+tag, f'<a href="#{tag}">#{tag}</a>', quote)
     quote = re.sub('  +', ' ', quote.replace('\n', '').replace('\r', '').replace('\t', ''))
     text = re.sub('  +', ' ', text.replace('\n', '').replace('\r', '').replace('\t', ''))
     return {'url': url, 'quote': quote, 'text': text, 'tags': tags}
@@ -369,7 +369,8 @@ def extract_quote_with_text(text, url, plain_text_content):
     plain_text_content = re.sub(r'<(?!' + re.escape(url) + r')[^>]+>', '', plain_text_content)
     plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
     plain_text_content = re.sub(r'(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
-    perform_search = lambda regex: (re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL), regex)
+    def perform_search(regex):
+        return re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL), regex
     escaped_text = re.escape(text)
     # First, we look for Confluence wiki-style links: [ text | URL ]
     # (note: based on minimal benchmarking, this is the most expensive of the regexs used)
@@ -430,7 +431,7 @@ def get_page_title(url):
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         response.raise_for_status()
     except requests.exceptions.RequestException as error:
-        return 'ERROR: {}'.format(error)
+        return f'ERROR: {error}'
     match = re.search('<title>([^<]+)</title>', response.text)
     if not match:
         return 'ERROR: NO TITLE'
@@ -462,22 +463,22 @@ def fix_usernames(users, project_name):
             user['name'] = correct_usernames[user_email]
 
 def load_json_file(project_name, role):
-    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, '{}_{}.json'.format(project_name, role))
+    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, f'{project_name}_{role}.json')
     try:
-        with open(json_filepath, 'r') as json_file:
+        with open(json_filepath, 'r', encoding='utf-8') as json_file:
             return json.load(json_file)
     except (FileNotFoundError, ValueError):
         return {}
 
 def save_json_file(data, project_name, role):
-    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, '{}_{}.json'.format(project_name, role))
-    with open(json_filepath, 'w') as json_file:
+    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, f'{project_name}_{role}.json')
+    with open(json_filepath, 'w', encoding='utf-8') as json_file:
         json.dump(data, json_file)
 
 def compute_youtube_stats(links, youtube_api_key):
     print('Now computing statistics on Youtube songs topics')
     youtube_video_ids = list(extract_youtube_video_ids([link['url'] for link in links]))
-    print('({} youtube video IDs found)'.format(len(youtube_video_ids)))
+    print(f'({len(youtube_video_ids)} youtube video IDs found)')
     video_topics_per_id = get_youtube_videos_topics(youtube_api_key, youtube_video_ids)
     return Counter(sum(video_topics_per_id.values(), []))
 
@@ -526,7 +527,7 @@ def generates_html_report(archive, project_name):
     #env.filters['format_date'] = jinja_format_date
     template = env.get_template('music_emails_spybot_report_template.html')
     html_report_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '.html')
-    with open(html_report_path, 'w') as report_file:
+    with open(html_report_path, 'w', encoding='utf-8') as report_file:
         report_file.write(template.render(project_name=project_name, **archive))
 
 def concatenate_repeated_spaces(text):
