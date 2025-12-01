@@ -22,19 +22,12 @@ Also: despite its name, this tool is in no way limited to music. It will happily
 
 
 ## Usage
+First, you will need to create a OAuth user access to a Google Cloud app with `readonly` access to the GMail API.
+This will give you a `client_secret.json` file.
+Then you can:
 
-If you're using Gmail, all you really need is to generate an [app password for this script to access your emails](https://security.google.com/settings/security/apppasswords),
-and to give it a string that appears in all the subjects of the emails you want to parse :
-
-    read -s IMAP_PASSWORD
-    ./music_emails_spybot.py ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD
-
-
-## Installation en tâche cronnée
-
-    cat <<EOF > /etc/cron.d/music_emails_spybot_crontask
-    00 00 * * * $USER (date && "$PWD/music_emails_spybot.py" ComfySpy --email-subject Comfy --imap-username lucascimon --imap-password $IMAP_PASSWORD >> "$PWD/ComfySpy.log" 2>&1)
-    EOF
+    ./get_gmail_api_token.py  # produces token.json - require a browser
+    ./music_emails_spybot.py ComfySpy --email-subject Comfy
 
 
 ## Contributing

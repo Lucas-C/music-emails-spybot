@@ -1,5 +1,5 @@
 [MESSAGES CONTROL]
-disable = import-error, invalid-name, missing-docstring, multiple-imports, no-member, too-many-arguments, ungrouped-imports
+disable = import-error, invalid-name, missing-docstring, multiple-imports, no-member, too-many-arguments, ungrouped-imports, unnecessary-lambda-assignment
 
 [FORMAT]
 max-line-length = 9000

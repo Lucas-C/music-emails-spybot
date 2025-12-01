@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 
-# Doc:
-# - https://tools.ietf.org/html/rfc3501
-# - https://developers.google.com/gmail/imap/imap-extensions
-
 # Useful commands:
 #  jq 'with_entries(select(.value.date_str|contains("2019-04-03")))' < ComfySpy_emails.json
 #  jq 'with_entries(select(.value.Date|contains("9 Jul 2016")))' < ComfySpy_rawdata.json
 #  jq 'del(.ce359021b4e0341745472c29441271bb.links[1])' ComfySpy_emails.json | sponge ComfySpy_emails.json
 #  jq 'with_entries(select(.value.msg_ids[]|contains("18205")))' < ComfySpy_rawdata.json
 
-import argparse, email, hashlib, html, json, re, requests, os, sys
-from base64 import b64encode
+import argparse, hashlib, html, json, re, requests, os, sys
+from base64 import urlsafe_b64decode, b64encode
 from collections import Counter, defaultdict
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
-from imaplib import IMAP4_SSL
 from urllib.parse import urlencode, urlparse, parse_qs
 
 from jinja2 import Environment, FileSystemLoader
+try:  # optional dependency
+    from tqdm import tqdm
+except ImportError:
+    tqdm = lambda _: _
 
 THIS_SCRIPT_PARENT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -51,23 +50,18 @@ def main(argv=None):
     generates_html_report(archive, args.project_name)
 
 def parse_args(argv):
-    parser = argparse.ArgumentParser(description='Generates an HTML report of all mentioned songs in emails retrieved from IMAP server (e.g. Gmail)',
+    parser = argparse.ArgumentParser(description='Generates an HTML report of all mentioned songs in emails retrieved from Gmail',
                                      formatter_class=ArgparseHelpFormatter)
-    parser.add_argument('--imap-username', required=True, help='Your Gmail account name')
-    parser.add_argument('--imap-password', required=True, help="With Gmail you'll need to generate an app password on https://security.google.com/settings/security/apppasswords")
     parser.add_argument('--email-subject')
     parser.add_argument('--ignored-email-subjects', help='Regular expression')
     parser.add_argument('--email-src', help=' ')
     parser.add_argument('--email-srcs', default=[], type=lambda srcs: srcs.split(','), help='Comma-separated list')
     parser.add_argument('--email-dest', help=' ')
     parser.add_argument('--email-dests', default=[], type=lambda dests: dests.split(','), help='Comma-separated list')
-    parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any IMAP connection, base everything on the "emails" cache file')
-    parser.add_argument('--rebuild-rawdata-cache', action='store_true', help='Re-fetch & parse all emails from IMAP server')
-    parser.add_argument('--rebuild-emails-cache', action='store_true', help='Re-parse all IMAP raw data')
-    parser.add_argument('--imap-mailbox', default='"[Gmail]/Tous les messages"', help=' ')
-    parser.add_argument('--imap-server-name', default='imap.gmail.com', help=' ')
-    parser.add_argument('--imap-server-port', type=int, default=993, help=' ')
-    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|fbcdn.net|framalistes.org|media.spacial.com|www.y/|www.yout/|\.gif$|\.jpe?g$|\.img$', help=' ')
+    parser.add_argument('--rebuild-from-cache-only', action='store_true', help='Do not perform any connection to the GMail api, base everything on the "emails" cache file')
+    parser.add_argument('--rebuild-rawdata-cache', action='store_true', help='Re-fetch & parse all emails')
+    parser.add_argument('--rebuild-emails-cache', action='store_true', help='Re-parse all raw data')
+    parser.add_argument('--ignored-links-pattern', default=r'www.avast.com|fbcdn.net|framalistes.org|itch.io|media.spacial.com|www.y/|www.yout/|\.gif$|\.jpe?g$|\.img$', help=' ')
     parser.add_argument('--only-links-pattern', help=' ')
     parser.add_argument('--only-from-emails', help=' ')
     parser.add_argument('--youtube-api-key', help='If set, includes at the bottom some stats on Youtube songs classification')
@@ -114,82 +108,101 @@ def retrieve_rawdata(args):
     else:
         rawdata = load_json_file(args.project_name, 'rawdata')
         already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
-    new_msgs = imap_get_new_msgs(args, already_fetched_ids)
-    new_rawdata = dedupe_and_index_by_hash(rawdata, extract_rawdata(new_msgs, args.ignored_email_subjects))
+    new_msgs_per_msgid = get_new_email_msgs(args, already_fetched_ids)
+    new_rawdata = dedupe_and_index_by_hash(rawdata, extract_rawdata(new_msgs_per_msgid, args.ignored_email_subjects))
     rawdata.update(new_rawdata)
     save_json_file(rawdata, args.project_name, 'rawdata')
     return rawdata if args.rebuild_emails_cache else new_rawdata
 
-def imap_get_new_msgs(args, already_fetched_ids):
-    imap = IMAP4_SSL(args.imap_server_name, args.imap_server_port)
-    try:
-        return_code, msgids = imap.login(args.imap_username, args.imap_password)
-        assert msgids[0].endswith(b' authenticated (Success)') and return_code == 'OK'
-        return_code, msgids = imap.select(mailbox=args.imap_mailbox, readonly=True)
-        assert return_code == 'OK'
-        msgids = set()
-        if args.email_subject:
-            print(f'Now searching for messages in {args.imap_mailbox} matching subject "{args.email_subject}"')
-            matching_msgids = imap_search(imap, 'SUBJECT', args.email_subject)
-            print(len(matching_msgids), 'matching messages found')
-            msgids.update(set(matching_msgids) - already_fetched_ids)
-        for email_src in args.email_srcs:
-            print(f'Now searching for messages in {args.imap_mailbox} with src "{email_src}"')
-            matching_msgids = imap_search(imap, 'FROM', email_src)
-            print(len(matching_msgids), 'matching messages found')
-            msgids.update(set(matching_msgids) - already_fetched_ids)
-        for email_dest in args.email_dests:
-            print(f'Now searching for messages in {args.imap_mailbox} with dest "{email_dest}"')
-            matching_msgids = imap_search(imap, 'TO', email_dest)
-            print(len(matching_msgids), 'matching messages found')
-            msgids.update(set(matching_msgids) - already_fetched_ids)
-        print(f'Now fetching {len(msgids)} new messages')
-        msgs = {id: imap.fetch(id.encode('ascii'), '(RFC822)') for id in msgids
-                if not (args.fetch_gmail_labels and gmail_is_draft(imap, id))}
-        assert all(msg[0] == 'OK' for msg in msgs.values())
-        return msgs
-    finally:
-        imap.logout()
+def get_new_email_msgs(args, already_fetched_ids):
+    with open("token.json", encoding="utf-8") as token_file:
+        token = json.load(token_file)
+    msgids = set()
+    if args.email_subject:
+        print(f'Now searching for messages matching subject "{args.email_subject}"')
+        matching_msgids = email_search(token, args.email_subject)
+        already_fetched_msg_ids = set(matching_msgids) & already_fetched_ids
+        print(len(matching_msgids), 'matching messages found -', len(already_fetched_msg_ids), 'are already fetched in cache')
+        msgids.update(set(matching_msgids) - already_fetched_msg_ids)
+    for email_src in args.email_srcs:
+        print(f'Now searching for messages with src "{email_src}"')
+        matching_msgids = email_search(token, f"from:{email_src}")
+        already_fetched_msg_ids = set(matching_msgids) & already_fetched_ids
+        print(len(matching_msgids), 'matching messages found -', len(already_fetched_msg_ids), 'are already fetched in cache')
+        msgids.update(set(matching_msgids) - already_fetched_msg_ids)
+    for email_dest in args.email_dests:
+        print(f'Now searching for messages with dest "{email_dest}"')
+        matching_msgids = email_search(token, f"to:{email_dest}")
+        already_fetched_msg_ids = set(matching_msgids) & already_fetched_ids
+        print(len(matching_msgids), 'matching messages found -', len(already_fetched_msg_ids), 'are already fetched in cache')
+        msgids.update(set(matching_msgids) - already_fetched_msg_ids)
+    print(f'Now fetching {len(msgids)} new messages')
+    return {msg_id: email_get(token, msg_id) for msg_id in tqdm(msgids)}
 
-def imap_search(imap, *args):
-    return_code, msgids = imap.search(None, *args)#, 'UNDRAFT')
-    assert return_code == 'OK' and len(msgids) == 1
-    return msgids[0].decode('ascii').split(' ')
+def email_search(token, query, page_token=''):
+    resp = requests.get(f"https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=500&pageToken={page_token}&q={query}", headers={
+        "Authorization": f'Bearer {token["access_token"]}'
+    })
+    resp_data = resp.json()
+    if resp.status_code >= 400:
+        print(resp_data)
+    resp.raise_for_status()
+    msgs = [msg["id"] for msg in resp_data["messages"]]
+    # Handle pagination of search results:
+    next_page_token = resp_data.get("nextPageToken")
+    if next_page_token:
+        msgs.extend(email_search(token, query, page_token=next_page_token))
+    return msgs
 
-def gmail_is_draft(imap, msg_id):
-    return_code, labels = imap.fetch(msg_id.encode('ascii'), 'X-GM-LABELS')
-    assert return_code == 'OK' and len(labels) == 1
-    return labels[0].endswith(br'(X-GM-LABELS ("\\Draft"))')
+def email_get(token, msg_id):
+    resp = requests.get(f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}", headers={
+        "Authorization": f'Bearer {token["access_token"]}'
+    })
+    resp_data = resp.json()
+    if resp.status_code >= 400:
+        print(resp_data)
+    resp.raise_for_status()
+    return resp_data
 
-def extract_rawdata(msgs, ignored_email_subjects):
-    print(f'Now extracting raw data from {len(msgs)} fetched messages')
+def extract_rawdata(msgs_per_msgid, ignored_email_subjects):
+    "Data model of an email Message: https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages#Message"
+    print(f'Now extracting raw data from {len(msgs_per_msgid)} fetched messages')
     compiled_re = re.compile(ignored_email_subjects or '.*')
     rawdata = {}
-    for msg_id, msg in msgs.items():
-        msg = email.message_from_string(decode_ffs(msg[1][0][1]))
-        email_subject = msg.get('Subject')
+    for msg_id, msg in msgs_per_msgid.items():
+        payload = msg["payload"]
+        headers = {header["name"]: header["value"] for header in payload["headers"]}
+        email_subject = headers['Subject']
         if ignored_email_subjects and compiled_re.search(email_subject):
             print('- Ignoring email with subject:', email_subject)
             continue
         rawdata[msg_id] = {
-            'Date': msg.get('Date'),
-            'From': msg.get('Reply-To') or msg.get('From'),
-            'To': msg.get('To'),
-            'Cc': msg.get('Cc'),
+            'Date': headers['Date'],
+            'From': headers.get('Reply-To') or headers['From'],
+            'To': headers.get('To'),
             'Subject': email_subject,
-            'text/html': get_msg_content(msg.get_payload(), 'text/html'),
-            'text/plain': get_msg_content(msg.get_payload(), 'text/plain'),
+            'text/html': get_msg_content(msg, 'text/html'),
+            'text/plain': get_msg_content(msg, 'text/plain'),
         }
     return rawdata
 
-def get_msg_content(msgs, target_content_type):
-    if isinstance(msgs, str):
-        return msgs
-    if any(msg.get_content_type() == 'multipart/alternative' for msg in msgs):
-        return get_msg_content([msg.get_payload() for msg in msgs if msg.get_content_type() == 'multipart/alternative'][0], target_content_type)
-    if any(msg.get_content_type() == target_content_type for msg in msgs):
-        return html.unescape(decode_ffs([msg.get_payload(decode=True) for msg in msgs if msg.get_content_type() == target_content_type][0]))
-    return None
+def get_msg_content(msg, target_content_type):
+    payload = msg["payload"]
+    body = payload.get("body")
+    if body and body["size"]:
+        if payload["mimeType"] != target_content_type:
+            return None
+    elif payload["mimeType"].startswith("multipart"):
+        matching_part = next((part for part in payload["parts"] if part["mimeType"] == target_content_type), None)
+        if not matching_part:
+            return None
+        body = matching_part["body"]
+    else:
+        return None
+    data = body.get("data")
+    if not data:
+        return None
+    return html.unescape(decode_ffs(urlsafe_b64decode(data)))
 
 def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
     try:
@@ -198,13 +211,15 @@ def decode_ffs(bytestring):  # Decode this bytestring for fuck's sake
         return bytestring.decode('latin1')
 
 def dedupe_and_index_by_hash(rawdata, new_rawdata):
-    print('Now deduping new rawdata (IMAP msgs often change ID, at least on Gmail)')
+    print('Now deduping new rawdata (GMail msgs often change ID)')
     new_rawdata_by_hash = {}
     for msg_id, rawdatum in new_rawdata.items():
         hash_id = hashlib.md5('|'.join(v or '' for k, v in rawdatum.items() if k != 'msg_ids').encode('utf8')).hexdigest()
-        if hash_id in rawdata or hash_id in new_rawdata_by_hash:
+        existing_rawdatum = rawdata.get(hash_id)
+        if existing_rawdatum is not None or hash_id in new_rawdata_by_hash:
             if hash_id not in new_rawdata_by_hash:
-                new_rawdata_by_hash[hash_id] = rawdata[hash_id]
+                new_rawdata_by_hash[hash_id] = existing_rawdatum
+                new_rawdata_by_hash[hash_id]['msg_ids'] = []
                 found_where = 'in cached rawdata'
             else:
                 found_where = 'among newly fetch'
@@ -289,11 +304,14 @@ def decode_email_user_label(user_name_label):
     return user_name
 
 def extract_links(rawdatum, args):
+    plain_content = rawdatum.get('text/plain') or rawdatum['text/html']
+    if not plain_content:
+        return []
     # With old msgs in the thread being quoted at the bottom of emails,
     # some are > 250 000 characters.
     # Based on experimental testing, no email is >5000 characters,
     # so we truncate content at this length
-    plain_content = rawdatum['text/plain'][:5000]
+    plain_content = plain_content[:5000]
     html_content = (rawdatum.get('text/html') or '')[:5000].replace('<wbr>', '')
     # Note: ici la troncature est rarement faite au même niveau dans les 2 versions
     # (la version HTML pouvant être 3x + longue que la version TEXT pour un même contenu)
@@ -422,7 +440,9 @@ def add_page_titles(project_name, emails):
     for email_msg in emails.values():
         for link in email_msg['links']:
             if link['url'] not in page_titles_cache:
-                page_titles_cache[link['url']] = get_page_title(link['url'])
+                page_title = get_page_title(link['url'])
+                page_titles_cache[link['url']] = page_title
+                print(f'* new page title retrieved: {page_title}')
             link['page_title'] = page_titles_cache[link['url']]
     save_json_file(page_titles_cache, project_name, 'page_titles_cache')
 
@@ -454,7 +474,7 @@ def aggregate_users_in_emails(emails):
     return users
 
 def fix_usernames(users, project_name):
-    correct_usernames = load_json_file(project_name, 'imap_usernames')
+    correct_usernames = load_json_file(project_name, 'username_aliases')
     if not correct_usernames:
         return
     print('Now fixing the users names')
@@ -463,17 +483,16 @@ def fix_usernames(users, project_name):
             user['name'] = correct_usernames[user_email]
 
 def load_json_file(project_name, role):
-    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, f'{project_name}_{role}.json')
     try:
-        with open(json_filepath, 'r', encoding='utf-8') as json_file:
+        with open(f'{project_name}_{role}.json', 'r', encoding='utf-8') as json_file:
             return json.load(json_file)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError) as error:
+        print(f"WARN: {error}")
         return {}
 
 def save_json_file(data, project_name, role):
-    json_filepath = os.path.join(THIS_SCRIPT_PARENT_DIR, f'{project_name}_{role}.json')
-    with open(json_filepath, 'w', encoding='utf-8') as json_file:
-        json.dump(data, json_file)
+    with open(f'{project_name}_{role}.json', 'w', encoding='utf-8') as json_file:
+        json.dump(data, json_file, indent=2)
 
 def compute_youtube_stats(links, youtube_api_key):
     print('Now computing statistics on Youtube songs topics')
@@ -526,8 +545,7 @@ def generates_html_report(archive, project_name):
     env = Environment(loader=FileSystemLoader(THIS_SCRIPT_PARENT_DIR))
     #env.filters['format_date'] = jinja_format_date
     template = env.get_template('music_emails_spybot_report_template.html')
-    html_report_path = os.path.join(THIS_SCRIPT_PARENT_DIR, project_name + '.html')
-    with open(html_report_path, 'w', encoding='utf-8') as report_file:
+    with open(f'{project_name}.html', 'w', encoding='utf-8') as report_file:
         report_file.write(template.render(project_name=project_name, **archive))
 
 def concatenate_repeated_spaces(text):
