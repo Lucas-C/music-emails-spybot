@@ -47,7 +47,7 @@ def main(argv=None):
     if archive['email_stats'] and args.include_mailto:
         dest = ';'.join(user_email for user_email, user in users.items() if archive['email_stats']['users'][user['name']]['emails_sent'])
         archive['mailto_href_base64'] = b64encode(('mailto:' + dest + '?subject=' + (args.email_subject or args.project_name)).encode()).decode()
-    generates_html_report(archive, args.project_name)
+    generates_html_report(archive, args.project_name, args.robots)
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Generates an HTML report of all mentioned songs in emails retrieved from Gmail',
@@ -68,6 +68,7 @@ def parse_args(argv):
     parser.add_argument('--no-email-stats', action='store_false', dest='render_email_stats', help=' ')
     parser.add_argument('--no-mailto', action='store_false', dest='include_mailto', help='So that no email appears in the HTML page')
     parser.add_argument('--no-fetch-gmail-labels', action='store_false', dest='fetch_gmail_labels', help='Fetch Gmail labels & exlude draft emails')
+    parser.add_argument('--no-robots', action='store_const', dest='robots', const='noindex')
     parser.add_argument('project_name')
     args = parser.parse_args(argv)
     if not args.email_subject and not args.email_dest and not args.email_dests:
@@ -540,13 +541,13 @@ def compute_email_stats(emails):
     assert len(emails) == sum(user_stats['emails_sent'] for user_name, user_stats in users_stats.items())
     return stats
 
-def generates_html_report(archive, project_name):
+def generates_html_report(archive, project_name, robots):
     print('Now generating the HTML report')
     env = Environment(loader=FileSystemLoader(THIS_SCRIPT_PARENT_DIR))
     #env.filters['format_date'] = jinja_format_date
     template = env.get_template('music_emails_spybot_report_template.html')
     with open(f'{project_name}.html', 'w', encoding='utf-8') as report_file:
-        report_file.write(template.render(project_name=project_name, **archive))
+        report_file.write(template.render(project_name=project_name, robots=robots, **archive))
 
 def concatenate_repeated_spaces(text):
     return re.sub(REPEATED_SPACE_RE, ' ', text)

@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ project_name }}</title>
     <meta name="author" content="Lucas Cimon [ chezsoi.org/lucas ]"/>
+    {% if robots %}
+    <meta name="robots" content="{{ robots }}">
+    {% endif %}
     <style>
     * {
       -webkit-box-sizing: border-box;
