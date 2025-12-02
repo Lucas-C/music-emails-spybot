@@ -66,51 +66,52 @@
     </style>
   </head>
   <body>
-      <h1>{{ project_name }}</h1>
-        <a href="#">
-          <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" alt="">
-        </a>
-        {% if mailto_href_base64 %}
-        <p style="text-align: center">
-          <br>
-          <!-- obfuscating with JS to avoid email scraping -->
-          <a href="#" onfocus="this.href = atob('{{ mailto_href_base64 }}')">Envoyer un email à tous les participants actifs</a>
-          <br>
-          <em>(toute personne ayant déjà contribué)</em>
-        </p>
-        {% endif %}
-        <h3>Morceaux ({{links|length}})</h3>
-        <table>
-          <thead>
-            <tr>
-              <th style="min-width: 90px">Date</th>
-              <th>Description</th>
-              <th>Auteur</th>
-            </tr>
-          </thead>
-          <tbody>
-          </tbody>
-        </table>
-        {% if email_stats %}
-        <h3>Stats</h3>
-        <h4>Contributeurs</h4>
-        <ul>
-          {% for user_name, user_stats in email_stats.users.items()|sort(attribute='1.links_shared', reverse=True) if
- user_stats.emails_sent %}
-          <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-        {% if youtube_stats|length %}
-        <h4>Classification Youtube des musiques</h4>
-        <ul>
-          {% for topic, count in youtube_stats.items()|sort(attribute='1', reverse=True) %}
-          <li>{{ topic }} : {{ count }}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
+    <h1>{{ project_name }}</h1>
+    <a href="#">
+      <img title="Click-me to remove any tag filter" src="{{ project_name }}.jpg" alt="">
+    </a>
+    <p>{{description}}</p>
+    {% if mailto_href_base64 %}
+    <p style="text-align: center">
+      <br>
+      <!-- obfuscating with JS to avoid email scraping -->
+      <a href="#" onfocus="this.href = atob('{{ mailto_href_base64 }}')">Envoyer un email à tous les participants actifs</a>
+      <br>
+      <em>(toute personne ayant déjà contribué)</em>
+    </p>
+    {% endif %}
+    <h3>Morceaux ({{links|length}})</h3>
+    <table>
+      <thead>
+        <tr>
+          <th style="min-width: 90px">Date</th>
+          <th>Description</th>
+          <th>Auteur</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+    {% if email_stats %}
+    <h3>Stats</h3>
+    <h4>Contributeurs</h4>
+    <ul>
+      {% for user_name, user_stats in email_stats.users.items()|sort(attribute='1.links_shared', reverse=True) if
+ useats.emails_sent %}
+      <li>{{ user_name }} (emails envoyés: {{ user_stats.emails_sent }} / emails reçus: {{ user_stats.emails_received }} / liens partagés: {{ user_stats.links_shared }})</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if youtube_stats|length %}
+    <h4>Classification Youtube des musiques</h4>
+    <ul>
+      {% for topic, count in youtube_stats.items()|sort(attribute='1', reverse=True) %}
+      <li>{{ topic }} : {{ count }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <footer>
-      Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
+    Source code available on Github at <a href="https://github.com/Lucas-C/music-emails-spybot">Lucas-C/music-email-spybot</a>
     </footer>
     <script>
     (function () {
