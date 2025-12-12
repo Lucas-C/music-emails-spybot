@@ -11,8 +11,8 @@ repos:
     -   id: check-yaml
     -   id: debug-statements
     -   id: trailing-whitespace
--   repo: https://github.com/pre-commit/mirrors-pylint
-    rev: v3.0.0a5
+-   repo: https://github.com/pylint-dev/pylint
+    rev: v4.0.4
     hooks:
     -   id: pylint
         args:

@@ -116,6 +116,8 @@ def retrieve_rawdata(args):
     return rawdata if args.rebuild_emails_cache else new_rawdata
 
 def get_new_email_msgs(args, already_fetched_ids):
+    if not os.path.exists("token.json"):
+        raise EnvironmentError(f"get_gmail_api_token.py must be called beforehand to generate token.json")
     with open("token.json", encoding="utf-8") as token_file:
         token = json.load(token_file)
     msgids = set()
@@ -452,11 +454,15 @@ def get_page_title(url):
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         response.raise_for_status()
     except requests.exceptions.RequestException as error:
-        return f'ERROR: {error}'
+        print(f'ERROR fetching page title: {error}')
+        return ''
     match = re.search('<title>([^<]+)</title>', response.text)
     if not match:
-        return 'ERROR: NO TITLE'
-    return match.group(1)
+        return ''
+    title = match.group(1)
+    if title in (' - YouTube', 'Avant d&#39;acc\u00e9der \u00e0 YouTube'):
+        return ''
+    return title
 
 def aggregate_users_in_emails(emails):
     print('Now aggregating users based on their emails')

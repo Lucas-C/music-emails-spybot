@@ -3,6 +3,7 @@
 # This script require a client_secret.json file to exists,
 # and will produce a token.json file as output.
 # Inspired by: https://github.com/UtkarshVerma/i3blocklets
+# This could also be done using Google Python libraries, like in: https://github.com/Lucas-C/youtube_playlist_watcher/blob/master/playlistItems_delete.py
 
 import json, requests
 from socketserver import StreamRequestHandler, TCPServer
