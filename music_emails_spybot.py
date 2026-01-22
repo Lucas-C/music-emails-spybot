@@ -117,7 +117,7 @@ def retrieve_rawdata(args):
 
 def get_new_email_msgs(args, already_fetched_ids):
     if not os.path.exists("token.json"):
-        raise EnvironmentError(f"get_gmail_api_token.py must be called beforehand to generate token.json")
+        raise EnvironmentError("get_gmail_api_token.py must be called beforehand to generate token.json")
     with open("token.json", encoding="utf-8") as token_file:
         token = json.load(token_file)
     msgids = set()
