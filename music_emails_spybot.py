@@ -184,22 +184,23 @@ def extract_rawdata(msgs_per_msgid, ignored_email_subjects):
             'From': headers.get('Reply-To') or headers['From'],
             'To': headers.get('To'),
             'Subject': email_subject,
-            'text/html': get_msg_content(msg, 'text/html'),
-            'text/plain': get_msg_content(msg, 'text/plain'),
+            'text/html': get_msg_content(msg["payload"], 'text/html'),
+            'text/plain': get_msg_content(msg["payload"], 'text/plain'),
         }
     return rawdata
 
-def get_msg_content(msg, target_content_type):
-    payload = msg["payload"]
+def get_msg_content(payload, target_content_type):
     body = payload.get("body")
     if body and body["size"]:
         if payload["mimeType"] != target_content_type:
             return None
+    # E.g. handle 'multipart/related' or 'multipart/alternative':
     elif payload["mimeType"].startswith("multipart"):
-        matching_part = next((part for part in payload["parts"] if part["mimeType"] == target_content_type), None)
-        if not matching_part:
+        # Recurse & filter out `None` values:
+        matching_parts = list(filter(lambda part: part, [get_msg_content(part, target_content_type) for part in payload["parts"]]))
+        if not matching_parts:
             return None
-        body = matching_part["body"]
+        return matching_parts[0]
     else:
         return None
     data = body.get("data")
