@@ -1,7 +1,8 @@
+import re
 from argparse import Namespace
 from quopri import decodestring as email_decode  # quoted-printable encoding
 
-from music_emails_spybot import extract_links, extract_quote, extract_src_dst, extract_user_email_and_name
+from music_emails_spybot import extract_links, extract_quote, extract_quote_with_text, extract_src_dst, extract_user_email_and_name
 
 
 ARGS_NO_PATTERNS = Namespace(ignored_links_pattern=None, only_links_pattern=None)
@@ -157,3 +158,54 @@ def test_extract_src_dst():
         }
     }
     assert extract_src_dst(rawdatum) == expected
+
+def test_extract_quote_with_text_with_consecutive_angle_bracket_links():
+    rawdatum = {
+        "text/html": "<div dir=\"ltr\"><div>Bonne \u00e9coute !</div><div><br></div><div>- Jungle : <a href=\"https://www.youtube.com/watch?v=5ItKS8bUUTA\">Time</a> & <a href=\"https://www.youtube.com/watch?v=BcsfftwLUf0\">Busy Earnin'</a>",
+        "text/plain": "Bonne \u00e9coute !\r\n\r\n- Jungle : Time <https://www.youtube.com/watch?v=5ItKS8bUUTA> & Busy Earnin'"
+    }
+
+    text, url = "Time", "https://www.youtube.com/watch?v=5ItKS8bUUTA"
+    # Replicating calls made in extract_quote_and_tags():
+    quote, regex = extract_quote_with_text(text, url, rawdatum["text/plain"])
+    quote = re.sub(regex, f'<a href="{url}">{text}</a>', quote)
+    assert quote == '- Jungle : <a href=\"https://www.youtube.com/watch?v=5ItKS8bUUTA\">Time</a>'
+
+    text, url = "Busy Earnin'", "https://www.youtube.com/watch?v=BcsfftwLUf0"
+    # Replicating calls made in extract_quote_and_tags():
+    quote, regex = extract_quote_with_text(text, url, rawdatum["text/plain"])
+    quote = re.sub(regex, f'<a href="{url}">{text}</a>', quote)
+    assert quote == '- Jungle : Time & <a href="https://www.youtube.com/watch?v=BcsfftwLUf0">Busy Earnin\'</a>'
+
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
+    links_per_url = {link['url']: link for link in links}
+    assert links_per_url['https://www.youtube.com/watch?v=5ItKS8bUUTA']['quote'] == '- Jungle : <a href=\"https://www.youtube.com/watch?v=5ItKS8bUUTA\">Time</a>'
+    assert links_per_url['https://www.youtube.com/watch?v=BcsfftwLUf0']['quote'] == '- Jungle : Time & <a href=\"https://www.youtube.com/watch?v=BcsfftwLUf0\">Busy Earnin\'</a>'
+
+def test_extract_quote_with_text_with_repeated_link():
+    rawdatum = {
+        "text/html": "<div dir=\"ltr\"><div>Bonne \u00e9coute !</div><div><br></div><div>- Jungle : <a href=\"https://www.youtube.com/watch?v=5ItKS8bUUTA\">Time</a> & <a href=\"https://www.youtube.com/watch?v=5ItKS8bUUTA\">Busy Earnin'</a></div>",
+        "text/plain": "Bonne \u00e9coute !\r\n\r\n- Jungle : Time <https://www.youtube.com/watch?v=5ItKS8bUUTA> & Busy Earnin'\r\n<https://www.youtube.com/watch?v=5ItKS8bUUTA>",
+    }
+
+    text, url = "Busy Earnin'", "https://www.youtube.com/watch?v=5ItKS8bUUTA"
+    # Replicating calls made in extract_quote_and_tags():
+    quote, regex = extract_quote_with_text(text, url, rawdatum["text/plain"])
+    quote = re.sub(regex, f'<a href="{url}">{text}</a>', quote)
+    assert quote == '& <a href="https://www.youtube.com/watch?v=5ItKS8bUUTA">Busy Earnin\'</a>'
+
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
+    links_per_url = {link['url']: link for link in links}
+    assert links_per_url['https://www.youtube.com/watch?v=5ItKS8bUUTA']['quote'] == '& <a href="https://www.youtube.com/watch?v=5ItKS8bUUTA">Busy Earnin\'</a>'
+
+def test_wip():
+    rawdatum = {
+        "text/plain": "Voici un morceau que j'ai d\u00e9couvert et qui me plait bien : \r\nBirdy et Rhodes : Let it all go \r\n[ https://www.youtube.com/watch?v=6u0DGIh3wLA | https://www.youtube.com/watch?v=6u0DGIh3wLA ]"
+    }
+
+    quote = extract_quote('https://www.youtube.com/watch?v=6u0DGIh3wLA', rawdatum["text/plain"])
+    assert quote == 'Birdy et Rhodes : Let it all go'
+
+    links = list(extract_links(rawdatum, args=ARGS_NO_PATTERNS))
+    links_per_url = {link['url']: link for link in links}
+    assert links_per_url['https://www.youtube.com/watch?v=6u0DGIh3wLA']['quote'] == '<a href="https://www.youtube.com/watch?v=6u0DGIh3wLA">Birdy et Rhodes : Let it all go</a>'

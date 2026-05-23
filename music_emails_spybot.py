@@ -89,16 +89,21 @@ class ArgparseHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefa
 def retrieve_emails(args):
     print('Now loading emails from on-disk cache file')
     emails = {} if args.rebuild_emails_cache else load_json_file(args.project_name, 'emails')
+    print(f'* {len(emails)} emails loaded from cache')
     if not args.rebuild_from_cache_only:
         new_rawdata = retrieve_rawdata(args)
         new_emails = extract_emails(new_rawdata, args)
+        print(f'* {len(new_emails)} new emails extracted from rawdata')
         emails.update(new_emails)
         dedupe_links(emails)
         save_json_file(emails, args.project_name, 'emails')
+    links_count = 0
     # We cross-reference parent emails in links AFTER writing the cache to avoid circular references
     for email_msg in emails.values():
         for link in email_msg['links']:
+            links_count += 1
             link['email'] = email_msg
+    print(f'* {links_count} links found in emails')
     return emails
 
 def retrieve_rawdata(args):
@@ -111,6 +116,7 @@ def retrieve_rawdata(args):
         already_fetched_ids = frozenset(sum([rawdatum['msg_ids'] for rawdatum in rawdata.values()], []))
     new_msgs_per_msgid = get_new_email_msgs(args, already_fetched_ids)
     new_rawdata = dedupe_and_index_by_hash(rawdata, extract_rawdata(new_msgs_per_msgid, args.ignored_email_subjects))
+    print(f'* {len(new_rawdata)} new rawdata fetched')
     rawdata.update(new_rawdata)
     save_json_file(rawdata, args.project_name, 'rawdata')
     return rawdata if args.rebuild_emails_cache else new_rawdata
@@ -372,7 +378,10 @@ def extract_quote_and_tags(args, url, plain_content, text=''):
 def clean_up_url(url):
     if url.count('http') > 1:  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
         url = re.search('http(?!.+http).+', url).group()
-    parsed_url = urlparse(url)
+    try:
+        parsed_url = urlparse(url)
+    except ValueError:
+        return None
     if parsed_url.hostname == 'www.youtube.com' and parsed_url.path != '/watch':
         return None  # invalid Youtube URL
     query_params = parse_qs(parsed_url.query)
@@ -392,11 +401,11 @@ def extract_quote_with_text(text, url, plain_text_content):
     plain_text_content = re.sub(r'http[^\s]+' + re.escape(url), url, plain_text_content)  # This handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
     plain_text_content = re.sub(r'(?!' + re.escape(url) + r')http[^\s]+\?[^\s]+', '', plain_text_content)
     def perform_search(regex):
-        return re.search(r'(^|[.!?]|\n\s*\n)([^.!?](?!\n\s*\n))*?' + regex + r'[^.!?]*?([.!?]|\n\s*\n|$)', plain_text_content, re.DOTALL), regex
+        return re.search(r'(?:^|[.!?]|(?!>)|\n\s*\n)(?:[^.!?>](?!\n\s*\n))*?' + regex + r'[^.!?]*?(?:[.!?]|(?!<)|\n\s*\n|$)', plain_text_content, re.DOTALL), regex
     escaped_text = re.escape(text)
     # First, we look for Confluence wiki-style links: [ text | URL ]
     # (note: based on minimal benchmarking, this is the most expensive of the regexs used)
-    match, regex = perform_search(r'\[\s*' + escaped_text + r'\s*|\s*' + re.escape(url) + r'\s*\]')
+    match, regex = perform_search(r'\[\s*' + escaped_text + r'\s*\|\s*' + re.escape(url) + r'\s*\]')
     if not match and url in text:
         # Second, we look for the bare URL if the link text contains it
         # We use 'in' instead of == to handle cases like http://https://www.youtube.com/watch?v=Qt-of-5EwhU
@@ -416,6 +425,11 @@ def extract_quote_with_text(text, url, plain_text_content):
 
 def extract_quote(url, plain_text_content):
     plain_text_content = re.sub(HISTORY_LINE_PREFIX_RE, '', plain_text_content)
+    # First, we look for this pattern: text [ URL | URL ]
+    match = re.search(r'([^]\n]+)\s*\[\s*' + re.escape(url) + r'\s*\|\s*' + re.escape(url) + r'\s*\]', plain_text_content)
+    if match:
+        text = match.group(1).strip()
+        return concatenate_repeated_spaces(text)
     sentences = [s.strip() for s in re.split(SENTENCE_SPLITTER_RE, plain_text_content)]
     try:
         i = next(i for i, s in enumerate(sentences) if url in s)
@@ -507,7 +521,7 @@ def compute_youtube_stats(links, youtube_api_key):
     youtube_video_ids = list(extract_youtube_video_ids([link['url'] for link in links]))
     print(f'({len(youtube_video_ids)} youtube video IDs found)')
     video_topics_per_id = get_youtube_videos_topics(youtube_api_key, youtube_video_ids)
-    return Counter(sum(video_topics_per_id.values(), []))
+    return Counter(sum((category for category in video_topics_per_id.values() if category != 'Music'), []))
 
 def extract_youtube_video_ids(urls):
     for url in urls:

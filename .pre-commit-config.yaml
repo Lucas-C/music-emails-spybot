@@ -12,7 +12,7 @@ repos:
     -   id: debug-statements
     -   id: trailing-whitespace
 -   repo: https://github.com/pylint-dev/pylint
-    rev: v4.0.4
+    rev: v4.0.5
     hooks:
     -   id: pylint
         args:
